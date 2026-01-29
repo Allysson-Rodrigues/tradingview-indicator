@@ -7,6 +7,8 @@ indicator('ICT + FVG + RSI V1.1.8', shorttitle="ICT + FVG Pro 1.1.8", overlay=tr
 // Nome:        ICT + FVG + RSI
 // Versão:      1.1.8
 // Atualizado:  2025-12-20
+// Author: Allysson Rodrigues
+// GitHub: https://github.com/Allysson-Rodrigues
 //
 // ═══════════════════════════════════════════════════════════════════════════
 // 📋 DESCRIÇÃO
