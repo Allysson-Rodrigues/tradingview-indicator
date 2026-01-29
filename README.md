@@ -28,3 +28,8 @@ Não constitui recomendação financeira.
 
 ## Versão
 - Atual: **v1.1.8**
+
+## 👤 Autor
+
+Criado e mantido por **Allysson Rodrigues**  
+GitHub: https://github.com/Allysson-Rodrigues
