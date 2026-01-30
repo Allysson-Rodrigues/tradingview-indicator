@@ -1,102 +1,84 @@
-# ICT + FVG + RSI (TradingView)
+# ICT + FVG + RSI (TradingView) 📈
 
-Indicador avançado desenvolvido em **Pine Script v6** para TradingView, focado em **Day Trade e Scalping**, combinando conceitos de **ICT (Inner Circle Trader)**, **Fair Value Gaps (FVG)** e **RSI Multi-Timeframe**, com painel visual e alertas configuráveis.
+An advanced technical analysis tool developed in **Pine Script v6** for TradingView. Designed specifically for **Day Trading and Scalping**, this indicator combines **ICT (Inner Circle Trader)** concepts, **Fair Value Gaps (FVG)**, and **Multi-Timeframe (MTF) RSI** into a unified, high-performance dashboard.
 
-O objetivo do script é oferecer **leitura clara de contexto de mercado**, redução de ruído visual e boa performance, mesmo em timeframes baixos.
-
----
-
-## 📌 Principais Conceitos Utilizados
-- ICT / Smart Money Concepts
-- Fair Value Gaps (FVG)
-- Análise Multi-Timeframe (MTF)
-- Momentum via RSI
-- Confluência técnica para entradas mais filtradas
+The primary goal is to provide a **clear market context**, reducing visual noise while maintaining high performance even on low-timeframe charts.
 
 ---
 
-## 🚀 Recursos
-- Candles HTF (até Weekly)
-- Detecção de **Fair Value Gaps (FVG)** com mitigação configurável
-- RSI Multi-Timeframe com **tabela dinâmica**
-- Threshold adaptativo por **timeframe ou ATR**
-- Médias móveis (EMA)
-- Alertas configuráveis para eventos relevantes
-- Painel visual informativo
-- Código otimizado para performance em tempo real
+## 📌 Core Methodology
+- **Smart Money Concepts (SMC/ICT):** Focus on institutional order flow.
+- **Fair Value Gaps (FVG):** Identification of price imbalances.
+- **Multi-Timeframe (MTF) Analysis:** Correlation between different time horizons.
+- **Momentum via RSI:** Relative strength analysis across multiple periods.
+- **Technical Confluence:** Filtering entries through combined logic.
 
 ---
 
-## 📊 Painel e Visualização
-- Tabela RSI MTF clara e compacta
-- Destaque visual de FVGs válidos e mitigados
-- Cores e elementos ajustáveis via inputs
-- Visual limpo, sem excesso de marcações
+## 🚀 Key Features
+* **HTF Candles:** High-timeframe visibility (up to Weekly) on lower-timeframe charts.
+* **Smart FVG Detection:** Automated detection with configurable mitigation logic.
+* **Dynamic MTF RSI Table:** A compact, real-time dashboard tracking momentum across timeframes.
+* **Adaptive Thresholds:** Parameters that adjust based on **Timeframe or ATR** (Average True Range).
+* **Moving Averages (EMA):** Integrated trend filters.
+* **Optimized Performance:** Clean code built for real-time execution without lag.
+* **Configurable Alerts:** Notifications for FVG formation, mitigation, and RSI conditions.
 
 ---
 
-## 🔔 Alertas
-O indicador permite criar alertas para:
-- Formação de novos FVGs
-- Mitigação de FVG
-- Condições específicas baseadas em RSI
-- Eventos importantes definidos pelo usuário
-
-Todos os alertas podem ser ativados ou desativados individualmente.
+## 📊 Dashboard & Visualization
+* **MTF RSI Table:** Clear and compact visual data.
+* **Smart Highlighting:** Distinct visual markers for valid vs. mitigated FVGs.
+* **Customizable UI:** Fully adjustable colors and elements via user inputs.
+* **Clean Interface:** Designed to avoid chart clutter.
 
 ---
 
-## 🛠️ Como usar no TradingView
-1. Abra o **TradingView**
-2. Vá até **Pine Editor**
-3. Copie o conteúdo do arquivo `ICT_FVG_RSI.pine`
-4. Cole o código no editor
-5. Clique em **Add to Chart**
-6. Ajuste os inputs conforme seu ativo e timeframe
+## 🛠️ How to Use on TradingView
+1. Open **TradingView**.
+2. Open the **Pine Editor** at the bottom of the screen.
+3. Copy the content from `ICT_FVG_RSI.pine`.
+4. Paste the code into the editor.
+5. Click **"Add to Chart"**.
+6. Adjust the settings in the **Inputs** tab to match your asset and strategy.
 
 ---
 
-## ⚙️ Timeframes Recomendados
-- **Scalp:** 1m / 3m / 5m  
-- **Day Trade:** 5m / 15m  
-- **Contexto HTF:** 1H / 4H / Daily
+## ⚙️ Recommended Timeframes
+* **Scalping:** 1m / 3m / 5m
+* **Day Trading:** 5m / 15m
+* **HTF Context:** 1H / 4H / Daily
 
-O indicador se adapta automaticamente a diferentes timeframes, mas recomenda-se ajustar os parâmetros conforme o ativo.
-
----
-
-## 📈 Boas Práticas de Uso
-- Utilize sempre **confluência** (FVG + RSI + contexto HTF)
-- Evite operar em mercado lateral sem confirmação
-- Combine com gestão de risco adequada
-- Não utilize o indicador isoladamente como sistema automático
+*Note: The indicator adapts automatically, but fine-tuning parameters per asset is recommended.*
 
 ---
 
-## ⚠️ Aviso Legal
-Este indicador é destinado **exclusivamente para fins educacionais e de estudo**.  
-Não constitui recomendação de investimento ou aconselhamento financeiro.
-
-O autor não se responsabiliza por perdas financeiras decorrentes do uso deste script.
-
----
-
-## 🧩 Versão
-- Atual: **v1.1.8**
-- Pine Script: **v6**
-- Status: Em desenvolvimento contínuo
+## 📈 Best Practices
+* **Seek Confluence:** Always look for the alignment of FVG + RSI + HTF Context.
+* **Avoid Sideways Markets:** Use the trend filters to stay out of low-probability ranges.
+* **Risk Management:** Never trade without a defined plan and stop loss.
+* **Not a Black Box:** This tool is designed to assist analysis, not to be used as a blind "buy/sell" signal generator.
 
 ---
 
-## 👤 Autor
-Criado e mantido por **Allysson Rodrigues**
-
-- GitHub: https://github.com/Allysson-Rodrigues
+## ⚠️ Legal Disclaimer
+This indicator is for **educational and research purposes only**. It does not constitute investment or financial advice. The author is not responsible for any financial losses incurred from the use of this script. Trading involves significant risk.
 
 ---
 
-## 📄 Licença
-© Allysson Rodrigues  
+## 🧩 Technical Details
+* **Current Version:** v1.1.8
+* **Pine Script Version:** v6
+* **Status:** Active Development
 
-Uso permitido apenas para fins **educacionais e pessoais**.  
-É proibida a redistribuição, modificação ou venda deste código sem autorização prévia do autor.
+---
+
+## 👤 Author
+Created and maintained by **Allysson Rodrigues**
+* GitHub: [Allysson-Rodrigues](https://github.com/Allysson-Rodrigues)
+
+---
+
+## 📄 License
+© Allysson Rodrigues.  
+**Educational and Personal Use only.** Redistribution, modification, or sale of this code is strictly prohibited without prior written consent from the author.
