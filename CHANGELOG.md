@@ -2,50 +2,56 @@
 // 📜 CHANGELOG
 // ═══════════════════════════════════════════════════════════════════════════
 // V1.1.8 (2025-12-20)
-//    - Robustez: Proteção contra divisão por zero no método isExpired
-//    - Robustez: Bounds checking e fallback para dados RSI inválidos
-//    - Robustez: Tabela RSI recria automaticamente ao mudar colunas
-//    - Extensibilidade: ATR Period agora é configurável via input
-//    - Extensibilidade: Fuso horário configurável (5 opções)
-//    - Extensibilidade: Timeframes da tabela RSI agora são dinâmicos
+//    - Robustness: Zero-division protection in isExpired method.
+//    - Robustness: Bounds checking and fallback for invalid RSI data.
+//    - Robustness: RSI table automatically recreates when changing columns.
+//    - Extensibility: ATR Period is now configurable via user input.
+//    - Extensibility: Configurable Timezone (5 options).
+//    - Extensibility: RSI table timeframes are now dynamic.
 //
 // V1.1.6 (2025-12-19)
-//    - Otimização: Cálculo condicional simplificado de níveis RSI
-//    - Refatoração: Cache RSI só calcula níveis com linhas visuais ativas
-//    - UX: Versão do Debug table atualizada para refletir versão atual
+//    - Optimization: Simplified conditional calculation of RSI levels.
+//    - Refactoring: RSI Cache only calculates levels when visual lines are active.
+//    - UX: Updated Debug table version to reflect current release.
 //
 // V1.1.5 (2025-12-18)
-//    - Novo: Checkboxes para ativar/desativar colunas RSI na tabela
-//    - UX melhorada: controle independente de exibição e nível RSI
+//    - New: Checkboxes to toggle RSI columns in the table.
+//    - Improved UX: Independent control for RSI display and levels.
 //
 // V1.1.4 (2025-12-18)
-//    - Otimização: RSI_ALPHA pré-calculado como constante var
-//    - Correção: f_fvg_detect() agora normaliza gap size pelo ATR quando ATR Auto está ativo
-//    - Evita falsos positivos em ativos voláteis ou com preços baixos
-//    - Consistência lógica: threshold e gap size usam mesma unidade de medida
+//    - Optimization: RSI_ALPHA pre-calculated as a 'var' constant.
+//    - Fix: f_fvg_detect() now normalizes gap size by ATR when ATR Auto is active.
+//    - Prevents false positives on volatile or low-priced assets.
+//    - Logical Consistency: Threshold and gap size now use the same unit of measure.
 //
 // V1.1.3 (2025-12-17)
-//    - Tooltips adicionados a todos os 60+ inputs do indicador
-//    - Documentação inline melhorada para melhor UX no TradingView
-//    - Descrições claras em português para cada parâmetro
+//    - Tooltips added to all 60+ indicator inputs.
+//    - Improved inline documentation for better TradingView UX.
+//    - Clear descriptions for every parameter.
 //
 // V1.1.2 (2025-12-16)
-//    - Correção crítica: box.set_top/bottom agora usa math.max/min
-//    - Bug corrigido: candles HTF de alta renderizam corretamente
-//    - Melhoria: corpo do candle sempre com coordenadas corretas
+//    - Critical Fix: box.set_top/bottom now uses math.max/min.
+//    - Bugfix: Corrected rendering for bullish HTF candles.
+//    - Improvement: Candle body now always uses correct coordinates.
 //
 // V1.1.1 (2025-12-16)
-//    - Timer histórico alterado de '---' para '--:--' (formato tempo)
-//    - FindImbalance otimizado: processa apenas em novo candle HTF
-//    - Removido box.copy() + box.delete() desnecessário (performance)
-//    - Tracking via idx para evitar duplicação de imbalances
-//    - Sincronização visual: FVG boxes acompanham movimento dos candles HTF
-//    - Correção: condição FVG >= 3 (detecta com exatamente 3 candles)
+//    - Historical timer changed from '---' to '--:--' (time format).
+//    - Optimized FindImbalance: Now processes only on new HTF candles.
+//    - Performance: Removed unnecessary box.copy() + box.delete() calls.
+//    - Tracking: Implemented idx-based tracking to prevent imbalance duplication.
+//    - Visual Sync: FVG boxes now follow HTF candle movement.
+//    - Fix: Condition FVG >= 3 (detects with exactly 3 candles).
 //
 // V1.1 (2025-12-15)
-//    - Removido scale=scale.none para melhor visualização dos candles
-//    - Timer alterado de 'n/a' para '---' em dados históricos
-//    - Documentação completa adicionada
+//    - Removed scale=scale.none for better candle visualization.
+//    - Timer changed from 'n/a' to '---' on historical data.
+//    - Added comprehensive documentation.
+//
+// V1.0 (2025-12-14)
+//    - Initial Release: ICT HTF Candles + FVG + RSI + MTF merge.
+//    - RSI Cache system implemented.
+//    - Added Debug mode for FVG.
+//    - Configured alerts.
 //
 // V1.0 (2025-12-14)
 //    - Fusão inicial: ICT HTF Candles + FVG + RSI + MTF
