@@ -67,7 +67,7 @@ This indicator is for **educational and research purposes only**. It does not co
 ---
 
 ## 🧩 Technical Details
-* **Current Version:** v1.1.8
+* **Current Version:** v1.2.1
 * **Pine Script Version:** v6
 * **Status:** Active Development
 
