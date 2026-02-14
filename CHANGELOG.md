@@ -1,6 +1,22 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // 📜 CHANGELOG
 // ═══════════════════════════════════════════════════════════════════════════
+// V1.2.1 (2026-02-14)
+//    - Anti-Repaint: Monitor usa barstate.ishistory em vez de barstate.islast
+//    - Bug Fix: RSI fallback nz() removido — evita mistura de dados entre TFs
+//    - Limpeza: helper.name (código morto) removido de todos os métodos
+//    - Manutenção: Constantes SEC_1H, SEC_4H, SEC_1D extraídas
+//
+// V1.2.0 (2026-02-12)
+//    - Bug Fix: request.security desenrolado do loop (5 chamadas explícitas)
+//    - Bug Fix: DayofWeek corrigido (usa constantes dayofweek.monday etc.)
+//    - Bug Fix: str.tonumber substituído por timeframe.in_seconds no Monitor
+//    - Anti-Repaint: Monitor agora exige barstate.isconfirmed para criar candle
+//    - Anti-Repaint: Mitigação/expiração FVG apenas em barstate.isconfirmed
+//    - Performance: var adicionado a Settings, Helper e color_transparent
+//    - Robustez: ValidTimeframe usa modulo (n2 % n1 == 0)
+//    - Robustez: Debug table protegido contra NaN (nz/na checks)
+//
 // V1.1.8 (2025-12-20)
 //    - Robustness: Zero-division protection in isExpired method.
 //    - Robustness: Bounds checking and fallback for invalid RSI data.
