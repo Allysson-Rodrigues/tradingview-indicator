@@ -1,6 +1,13 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // 📜 CHANGELOG
 // ═══════════════════════════════════════════════════════════════════════════
+// V1.2.2 (2026-02-19)
+//    - Bug Fix: FVG expiração migrada de tempo-relógio para bar_index
+//      (corrige inflação de idade em mercados com gap noturno, ex: ações)
+//    - Bug Fix: Garbage collection de candles HTF ao desativar o grupo
+//    - Performance: Reorder/Update restritos a barstate.isnew/islast
+//    - Performance: FindImbalance com dirty flag — evita recriação total
+
 // V1.2.1 (2026-02-14)
 //    - Anti-Repaint: Monitor usa barstate.ishistory em vez de barstate.islast
 //    - Bug Fix: RSI fallback nz() removido — evita mistura de dados entre TFs

@@ -1,16 +1,23 @@
 //@version=6
-indicator('ICT + FVG + RSI V1.2.1', shorttitle="ICT + FVG Pro 1.2.1", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500, max_bars_back=5000)
+indicator('ICT + FVG + RSI V1.2.2', shorttitle="ICT + FVG Pro 1.2.2", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500, max_bars_back=5000)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📌 METADADOS
 // ═══════════════════════════════════════════════════════════════════════════
 // Nome:        ICT + FVG + RSI
-// Versão:      1.2.1
-// Atualizado:  2026-02-15
+// Versão:      1.2.2
+// Atualizado:  2026-02-19
 //
 // ═══════════════════════════════════════════════════════════════════════════
 // 📜 CHANGELOG
 // ═══════════════════════════════════════════════════════════════════════════
+// V1.2.2 (2026-02-19)
+//    - Bug Fix: FVG expiração migrada de tempo-relógio para bar_index
+//      (corrige inflação de idade em mercados com gap noturno, ex: ações)
+//    - Bug Fix: Garbage collection de candles HTF ao desativar o grupo
+//    - Performance: Reorder/Update restritos a barstate.isnew/islast
+//    - Performance: FindImbalance com dirty flag — evita recriação total
+
 // V1.2.1 (2026-02-14)
 //    - Anti-Repaint: Monitor usa barstate.ishistory em vez de barstate.islast
 //    - Bug Fix: RSI fallback nz() removido — evita mistura de dados entre TFs
@@ -78,7 +85,6 @@ indicator('ICT + FVG + RSI V1.2.1', shorttitle="ICT + FVG Pro 1.2.1", overlay=tr
 //    - RSI Cache system implemented.
 //    - Added Debug mode for FVG.
 //    - Configured alerts.
-
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔢 CONSTANTES
 // ═══════════════════════════════════════════════════════════════════════════
@@ -92,144 +98,120 @@ const int SEC_1D  = 86400
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📦 TYPES
-//    Definições de User-Defined Types (UDTs) usadas em todo o indicador.
-//    Cada type encapsula dados e referências visuais para um domínio específico.
 // ═══════════════════════════════════════════════════════════════════════════
-// Candle — representa um candle de higher timeframe (HTF) desenhado como overlay.
-// Armazena dados OHLC, índices de barra, e referências aos objetos gráficos (box/line/label).
 type Candle
-    float o              // Preço de abertura (Open)
-    float c              // Preço de fechamento (Close) — atualizado em tempo real
-    float h              // Preço máximo (High) — atualizado em tempo real
-    float l              // Preço mínimo (Low) — atualizado em tempo real
-    int o_time           // Timestamp (ms) da abertura do candle HTF
-    int o_idx            // bar_index da barra onde o candle HTF abriu
-    int c_idx            // bar_index da barra mais recente (close atualizado)
-    int h_idx            // bar_index da barra onde ocorreu a máxima
-    int l_idx            // bar_index da barra onde ocorreu a mínima
-    string dow           // Rótulo do dia/hora (ex: 'Seg', '14', 'Sem 7')
-    box body             // Objeto box que desenha o corpo do candle
-    line wick_up         // Linha do pavio superior (high → max(o,c))
-    line wick_down       // Linha do pavio inferior (min(o,c) → low)
-    label dow_label      // Label que exibe o dia da semana acima do candle
+    float o
+    float c
+    float h
+    float l
+    int o_time
+    int o_idx
+    int c_idx
+    int h_idx
+    int l_idx
+    string dow
+    box body
+    line wick_up
+    line wick_down
+    label dow_label
 
-// Trace — linhas horizontais que conectam o preço atual até os candles HTF.
-// Cada campo guarda a referência da line e do label correspondente ao nível OHLC.
 type Trace
-    line o               // Linha de traço do preço Open
-    line c               // Linha de traço do preço Close
-    line h               // Linha de traço do preço High
-    line l               // Linha de traço do preço Low
-    label o_l            // Label com valor numérico do Open
-    label c_l            // Label com valor numérico do Close
-    label h_l            // Label com valor numérico do High
-    label l_l            // Label com valor numérico do Low
+    line o
+    line c
+    line h
+    line l
+    label o_l
+    label c_l
+    label h_l
+    label l_l
 
-// Imbalance — representa um FVG ou Volume Imbalance detectado DENTRO dos candles HTF.
-// Usado pelo método FindImbalance para desenhar caixas entre candles adjacentes.
 type Imbalance
-    box b                // Objeto box que desenha o desequilíbrio visualmente
-    int idx              // bar_index do candle mais recente quando o imbalance foi detectado
-    int arr_i1           // Índice do primeiro candle no array candles (perna 1)
-    int arr_i2           // Índice do segundo candle no array candles (perna 2 ou 3)
+    box b
+    int idx
+    int arr_i1
+    int arr_i2
 
-// CandleSettings — configurações individuais para cada slot de timeframe HTF (1-6).
 type CandleSettings
-    bool show            // Se este HTF está ativo/visível
-    string htf           // Código do timeframe (ex: '5', '15', '60', '1D')
-    int max_display      // Limite máximo de candles renderizados para este slot
+    bool show
+    string htf
+    int max_display
 
-// Settings — configurações globais do indicador (cores, tamanhos, comportamentos).
-// Instanciado uma única vez com `var` e preenchido na seção de INPUTS.
 type Settings
-    // --- Gerais ---
-    int max_sets             // Limite máximo de grupos HTF exibidos simultaneamente
-    // --- Cores dos candles HTF ---
-    color bull_body          // Cor do corpo de candles de alta
-    color bull_border        // Cor da borda de candles de alta
-    color bull_wick          // Cor do pavio de candles de alta
-    color bear_body          // Cor do corpo de candles de baixa
-    color bear_border        // Cor da borda de candles de baixa
-    color bear_wick          // Cor do pavio de candles de baixa
-    // --- Layout ---
-    int offset               // Distância (em barras) entre gráfico atual e HTF candles
-    int buffer               // Espaçamento entre candles dentro do mesmo grupo HTF
-    int htf_buffer           // Espaçamento entre grupos de timeframes diferentes
-    int width                // Largura visual do candle HTF (já multiplicado por 2)
-    // --- Labels e Timer ---
-    bool daily_name          // Exibir nome do dia da semana em candles diários
-    bool trace_show          // Ativar trace lines (OHLC → HTF candles)
-    color trace_o_color      // Cor da trace line Open
-    string trace_o_style     // Estilo da trace line Open ('⎯⎯⎯', '----', '····')
-    int trace_o_size         // Espessura da trace line Open
-    color trace_c_color      // Cor da trace line Close
-    string trace_c_style     // Estilo da trace line Close
-    int trace_c_size         // Espessura da trace line Close
-    color trace_h_color      // Cor da trace line High
-    string trace_h_style     // Estilo da trace line High
-    int trace_h_size         // Espessura da trace line High
-    color trace_l_color      // Cor da trace line Low
-    string trace_l_style     // Estilo da trace line Low
-    int trace_l_size         // Espessura da trace line Low
-    string trace_anchor      // 'First Timeframe' ou 'Last Timeframe' — qual grupo recebe traces
-    bool label_show          // Exibir labels de preço OHLC nas traces
-    color label_color        // Cor do texto dos labels de preço
-    string label_size        // Tamanho do texto dos labels de preço
-    string label_position    // Posição dos labels HTF: 'Top', 'Bottom', 'Both'
-    string label_alignment   // 'Align' (fixo) ou 'Follow Candles' (dinâmico)
-    // --- FVG/VI MTF (dentro dos candles HTF) ---
-    bool fvg_show            // Detectar FVGs entre candles HTF
-    color fvg_color          // Cor das caixas FVG MTF
-    bool vi_show             // Detectar Volume Imbalances entre candles HTF
-    color vi_color           // Cor das caixas VI MTF
-    // --- Labels HTF ---
-    bool htf_label_show      // Exibir nome do timeframe acima/abaixo dos candles
-    color htf_label_color    // Cor do label do nome HTF
-    string htf_label_size    // Tamanho do label do nome HTF
-    bool htf_timer_show      // Exibir timer de contagem regressiva
-    color htf_timer_color    // Cor do timer
-    string htf_timer_size    // Tamanho do timer
-    color dow_color          // Cor do label do dia da semana
-    string dow_size          // Tamanho do label do dia da semana
+    int max_sets
+    color bull_body
+    color bull_border
+    color bull_wick
+    color bear_body
+    color bear_border
+    color bear_wick
+    int offset
+    int buffer
+    int htf_buffer
+    int width
+    bool daily_name
+    bool trace_show
+    color trace_o_color
+    string trace_o_style
+    int trace_o_size
+    color trace_c_color
+    string trace_c_style
+    int trace_c_size
+    color trace_h_color
+    string trace_h_style
+    int trace_h_size
+    color trace_l_color
+    string trace_l_style
+    int trace_l_size
+    string trace_anchor
+    bool label_show
+    color label_color
+    string label_size
+    string label_position
+    string label_alignment
+    bool fvg_show
+    color fvg_color
+    bool vi_show
+    color vi_color
+    bool htf_label_show
+    color htf_label_color
+    string htf_label_size
+    bool htf_timer_show
+    color htf_timer_color
+    string htf_timer_size
+    color dow_color
+    string dow_size
 
-// CandleSet — agrupa todos os dados de um slot de timeframe HTF.
-// Cada slot (htf1…htf6) possui seu próprio CandleSet com candles, imbalances e labels.
 type CandleSet
-    array<Candle> candles          // Array de candles HTF renderizados (FIFO)
-    array<Imbalance> imbalances    // Array de FVGs/VIs detectados entre os candles
-    CandleSettings settings        // Configurações específicas deste slot (show, htf, max)
-    label tfNameTop                // Label do nome do TF (posição superior)
-    label tfNameBottom             // Label do nome do TF (posição inferior)
-    label tfTimerTop               // Label do timer countdown (posição superior)
-    label tfTimerBottom            // Label do timer countdown (posição inferior)
+    array<Candle> candles
+    array<Imbalance> imbalances
+    CandleSettings settings
+    label tfNameTop
+    label tfNameBottom
+    label tfTimerTop
+    label tfTimerBottom
 
 
-// FVG — Fair Value Gap detectado no gráfico principal (não é o FVG MTF dos candles HTF).
-// Ciclo de vida: criação (f_fvg_detect) → desenho (draw) → mitigação/expiração (remove).
 type FVG
-    float top            // Topo do gap (low da barra central para bull, low[2] para bear)
-    float bottom         // Base do gap (high[2] para bull, high da barra central para bear)
-    bool isBull          // true = FVG de alta (gap acima), false = FVG de baixa (gap abaixo)
-    int birthTime        // Timestamp (ms) da barra onde o gap se formou (time[2])
-    box boxObj           // Objeto box desenhado no gráfico (xloc.bar_time)
-    line mitigatedLine   // Reservado para linha de mitigação (não utilizado atualmente)
-    bool isActive        // true enquanto o FVG não foi mitigado nem expirou
+    float top
+    float bottom
+    bool isBull
+    int birthTime
+    int birthBarIndex
+    box boxObj
+    line mitigatedLine
+    bool isActive
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ⚙️ INPUTS
-//    Parâmetros configuráveis pelo usuário via painel de settings do TradingView.
-//    Organizados em grupos: HTF Candles, Styling, Labels, Imbalances,
-//    Trace Lines, EMA, RSI, Tabela RSI e FVG Gráfico.
 // ═══════════════════════════════════════════════════════════════════════════
-// Instâncias das configurações — alocadas com `var` para persistência entre barras.
-// [FIX v1.2.0] var adicionado — Settings alocados uma única vez
+// [FIX v1.2.0] var adicionado — Settings e Helper alocados uma única vez
 var Settings settings = Settings.new()
-var CandleSettings SettingsHTF1 = CandleSettings.new()  // Config slot HTF 1
-var CandleSettings SettingsHTF2 = CandleSettings.new()  // Config slot HTF 2
-var CandleSettings SettingsHTF3 = CandleSettings.new()  // Config slot HTF 3
-var CandleSettings SettingsHTF4 = CandleSettings.new()  // Config slot HTF 4
-var CandleSettings SettingsHTF5 = CandleSettings.new()  // Config slot HTF 5 (Daily)
-var CandleSettings SettingsHTF6 = CandleSettings.new()  // Config slot HTF 6 (Weekly)
+var CandleSettings SettingsHTF1 = CandleSettings.new()
+var CandleSettings SettingsHTF2 = CandleSettings.new()
+var CandleSettings SettingsHTF3 = CandleSettings.new()
+var CandleSettings SettingsHTF4 = CandleSettings.new()
+var CandleSettings SettingsHTF5 = CandleSettings.new()
+var CandleSettings SettingsHTF6 = CandleSettings.new()
 
 string group_htf = "📊 HTF Candles  ━━━━━━━━━━━━━━━━━━━━"
 string group_style = "🎨 Styling  ━━━━━━━━━━━━━━━━━━━━━━"
@@ -381,12 +363,7 @@ i_atr_period = input.int(14, 'ATR Período', minval=5, maxval=50, group=group_fv
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🌐 VARIÁVEIS GLOBAIS
-//    Estado persistente do indicador, alocado via `var` (mantido entre barras).
-//    Dividido em: arrays de candles/imbalances, CandleSets (slots HTF),
-//    estado RSI (caches, arrays, tabela) e estado FVG (lista ativa, debug).
 // ═══════════════════════════════════════════════════════════════════════════
-
-// --- Arrays de candles HTF (um por slot, FIFO: índice 0 = mais recente) ---
 var array<Candle> candles_1 = array.new<Candle>(0)
 var array<Candle> candles_2 = array.new<Candle>(0)
 var array<Candle> candles_3 = array.new<Candle>(0)
@@ -394,8 +371,6 @@ var array<Candle> candles_4 = array.new<Candle>(0)
 var array<Candle> candles_5 = array.new<Candle>(0)
 var array<Candle> candles_6 = array.new<Candle>(0)
 
-
-// --- Arrays de imbalances FVG/VI MTF (um por slot HTF) ---
 var array<Imbalance> imbalances_1 = array.new<Imbalance>()
 var array<Imbalance> imbalances_2 = array.new<Imbalance>()
 var array<Imbalance> imbalances_3 = array.new<Imbalance>()
@@ -403,90 +378,90 @@ var array<Imbalance> imbalances_4 = array.new<Imbalance>()
 var array<Imbalance> imbalances_5 = array.new<Imbalance>()
 var array<Imbalance> imbalances_6 = array.new<Imbalance>()
 
+var int g_last_imb_idx_1 = -1
+var int g_last_imb_idx_2 = -1
+var int g_last_imb_idx_3 = -1
+var int g_last_imb_idx_4 = -1
+var int g_last_imb_idx_5 = -1
+var int g_last_imb_idx_6 = -1
 
-// --- Instâncias CandleSet: ligam arrays aos slots HTF e armazenam labels ---
-var CandleSet htf1 = CandleSet.new()  // Slot HTF 1 (ex: 5m)
+var bool prev_show_htf1 = true
+var bool prev_show_htf2 = true
+var bool prev_show_htf3 = true
+var bool prev_show_htf4 = true
+var bool prev_show_htf5 = true
+var bool prev_show_htf6 = true
+
+var CandleSet htf1 = CandleSet.new()
 htf1.settings := SettingsHTF1
 htf1.candles := candles_1
 htf1.imbalances := imbalances_1
 
-var CandleSet htf2 = CandleSet.new()  // Slot HTF 2 (ex: 15m)
+var CandleSet htf2 = CandleSet.new()
 htf2.settings := SettingsHTF2
 htf2.candles := candles_2
 htf2.imbalances := imbalances_2
 
-var CandleSet htf3 = CandleSet.new()  // Slot HTF 3 (ex: 1h)
+var CandleSet htf3 = CandleSet.new()
 htf3.settings := SettingsHTF3
 htf3.candles := candles_3
 htf3.imbalances := imbalances_3
 
-var CandleSet htf4 = CandleSet.new()  // Slot HTF 4 (ex: 4h)
+var CandleSet htf4 = CandleSet.new()
 htf4.settings := SettingsHTF4
 htf4.candles := candles_4
 htf4.imbalances := imbalances_4
 
-var CandleSet htf5 = CandleSet.new()  // Slot HTF 5 (ex: 1D)
+var CandleSet htf5 = CandleSet.new()
 htf5.settings := SettingsHTF5
 htf5.candles := candles_5
 htf5.imbalances := imbalances_5
 
-var CandleSet htf6 = CandleSet.new()  // Slot HTF 6 (ex: 1W)
+var CandleSet htf6 = CandleSet.new()
 htf6.settings := SettingsHTF6
 htf6.candles := candles_6
 htf6.imbalances := imbalances_6
 
-
-// --- Objetos únicos globais ---
 // [FIX v1.2.1] Helper removido — métodos convertidos em funções puras
-var Trace trace = Trace.new()           // Instância única das trace lines OHLC
+var Trace trace = Trace.new()
 // [FIX v1.2.0] var adicionado
-var color color_transparent = #ffffff00 // Cor transparente reutilizável (evita recriação)
+var color color_transparent = #ffffff00
 
+// RSI
+float RSI_ALPHA = 1.0 / i_rsi_length
+var array<string> g_rsi_tfs = array.from(i_rsi_tf1, i_rsi_tf2, i_rsi_tf3, i_rsi_tf4, i_rsi_tf5)
+var array<string> g_rsi_tfs_display = array.from(i_rsi_tf1_name, i_rsi_tf2_name, i_rsi_tf3_name, i_rsi_tf4_name, i_rsi_tf5_name)
+var float[] g_rsi_values = array.new_float(5, na)
+var float[] g_rsi_close = array.new_float(5, na)
+var float[] g_rsi_auc = array.new_float(5, na)
+var float[] g_rsi_adc = array.new_float(5, na)
+var float g_cached_rsi25 = na
+var float g_cached_rsi30 = na
+var float g_cached_rsi50 = na
+var float g_cached_rsi70 = na
+var float g_cached_rsi75 = na
+var float g_cached_rsi_custom = na
+var int g_last_calc_bar = -1
+var table g_rsi_table = na
+var int g_prev_col_config = 0
 
-// --- Estado RSI (caches de preço e componentes por timeframe) ---
-float RSI_ALPHA = 1.0 / i_rsi_length                    // Fator de suavização EMA do RSI (1/período)
-var array<string> g_rsi_tfs = array.from(i_rsi_tf1, i_rsi_tf2, i_rsi_tf3, i_rsi_tf4, i_rsi_tf5)            // TFs configurados
-var array<string> g_rsi_tfs_display = array.from(i_rsi_tf1_name, i_rsi_tf2_name, i_rsi_tf3_name, i_rsi_tf4_name, i_rsi_tf5_name)  // Nomes exibidos na tabela
-var float[] g_rsi_values = array.new_float(5, na)        // RSI atual de cada TF (índice 0…4)
-var float[] g_rsi_close  = array.new_float(5, na)        // Close de cada TF
-var float[] g_rsi_auc    = array.new_float(5, na)        // EMA dos ganhos (avg up change)
-var float[] g_rsi_adc    = array.new_float(5, na)        // EMA das perdas (avg down change)
-var float g_cached_rsi25 = na         // Preço-alvo cacheado para RSI = 25
-var float g_cached_rsi30 = na         // Preço-alvo cacheado para RSI = 30
-var float g_cached_rsi50 = na         // Preço-alvo cacheado para RSI = 50
-var float g_cached_rsi70 = na         // Preço-alvo cacheado para RSI = 70
-var float g_cached_rsi75 = na         // Preço-alvo cacheado para RSI = 75
-var float g_cached_rsi_custom = na    // Preço-alvo cacheado para nível customizado
-var int g_last_calc_bar = -1          // bar_index da última atualização do cache RSI
-var table g_rsi_table = na            // Referência da tabela RSI MTF
-var int g_prev_col_config = 0         // Configuração anterior de colunas (detecta mudança)
-
-// --- Estado FVG Gráfico (lista ativa, controle de duplicatas, debug) ---
-var array<FVG> g_active_fvgs = array.new<FVG>()  // FVGs ativos no gráfico principal (FIFO)
-var int g_prev_fvg_time = 0           // Timestamp do último FVG ANTES de nova adição (anti-duplicata)
-var int g_last_fvg_time = 0           // Timestamp do FVG mais recente adicionado
-var array<int> g_fvg_to_remove = array.new<int>()  // Buffer de índices para remoção em batch
-var int g_tf_seconds = 0              // Duração em segundos do TF de detecção FVG
-var table g_debug_table = na          // Referência da tabela de debug FVG
+// FVG Gráfico
+var array<FVG> g_active_fvgs = array.new<FVG>()
+var int g_prev_fvg_time = 0
+var int g_last_fvg_time = 0
+var array<int> g_fvg_to_remove = array.new<int>()
+var int g_tf_seconds = 0
+var table g_debug_table = na
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔧 FUNÇÕES AUXILIARES - ICT
-//    Funções puras que não modificam estado global. Usadas na renderização
-//    e configuração dos candles HTF, trace lines e labels.
 // ═══════════════════════════════════════════════════════════════════════════
-
-// @description  Converte string visual de estilo de linha para constante Pine.
-// @param style  String de estilo ('⎯⎯⎯', '----', '····')
-// @returns      Constante line.style_* correspondente
 f_line_style(string style) =>
     switch style
         '----' => line.style_dashed
         '····' => line.style_dotted
         => line.style_solid
 
-// @description  Converte índice numérico do dia da semana para abreviação em português.
-// @param index  Constante dayofweek.* (1=Dom, 2=Seg, … 7=Sáb)
-// @returns      String abreviada ('Seg', 'Ter', …) ou '' se na/inválido
 // [FIX v1.2.0] DayofWeek corrigido — usa constantes Pine + default robusto
 f_day_of_week(int index) =>
     if na(index)
@@ -502,11 +477,6 @@ f_day_of_week(int index) =>
             dayofweek.sunday    => 'Dom'
             => ''
 
-// @description  Verifica se um timeframe HTF é compatível com o TF atual do gráfico.
-//               Para TFs >= Diário: basta ser maior que o atual.
-//               Para intraday: exige que HTF seja múltiplo exato do TF atual.
-// @param HTF    Código do timeframe a validar (ex: '15', '60', '1D')
-// @returns      true se o HTF pode ser renderizado corretamente
 // [FIX v1.2.0] ValidTimeframe usa modulo para precisão
 f_valid_timeframe(string HTF) =>
     if timeframe.in_seconds(HTF) >= timeframe.in_seconds('D') and timeframe.in_seconds(HTF) > timeframe.in_seconds()
@@ -516,12 +486,6 @@ f_valid_timeframe(string HTF) =>
         n2 = timeframe.in_seconds(HTF)
         n1 < n2 and n2 % n1 == 0
 
-// @description  Calcula o tempo restante até o fechamento do candle HTF.
-//               Usa cálculo matemático puro (openTime + duração - timenow)
-//               para evitar request.security em bloco condicional.
-// @param HTF       Código do timeframe (para calcular a duração)
-// @param openTime  Timestamp (ms) da abertura do candle HTF atual
-// @returns         String formatada ('MM:SS', 'HH:MM:SS', 'ND HH:MM:SS' ou '--:--')
 f_remaining_time(string HTF, int openTime) =>
     if barstate.islast
         // [FIX] Cálculo matemático (evita request.security em bloco condicional)
@@ -543,9 +507,6 @@ f_remaining_time(string HTF, int openTime) =>
     else
         '--:--'
 
-// @description  Converte código de timeframe para formato de exibição legível.
-// @param HTF    Código do timeframe (ex: '5', '60', '1D')
-// @returns      String formatada (ex: '5m', '1H', '1D')
 f_htf_name(string HTF) =>
     seconds = timeframe.in_seconds(HTF)
     if seconds < 60
@@ -557,8 +518,6 @@ f_htf_name(string HTF) =>
     else
         HTF
 
-// @description  Conta quantos slots HTF estão ativos, limitado por settings.max_sets.
-// @returns      Número de HTFs que serão renderizados (0 a settings.max_sets)
 f_htf_enabled() =>
     int enabled = 0
     enabled += htf1.settings.show ? 1 : 0
@@ -569,10 +528,6 @@ f_htf_enabled() =>
     enabled += htf6.settings.show ? 1 : 0
     math.min(enabled, settings.max_sets)
 
-// @description  Encontra o preço máximo (high) dentre todos os candles de um array.
-// @param candles  Array de Candle a analisar
-// @param h        Valor inicial de comparação (acumulador)
-// @returns        Maior high encontrado (ou h se array vazio)
 f_candle_set_high(array<Candle> candles, float h) =>
     float _h = h
     if candles.size() > 0
@@ -581,10 +536,6 @@ f_candle_set_high(array<Candle> candles, float h) =>
                 _h := candles.get(i).h
     _h
 
-// @description  Encontra o preço mínimo (low) dentre todos os candles de um array.
-// @param candles  Array de Candle a analisar
-// @param l        Valor inicial de comparação (acumulador)
-// @returns        Menor low encontrado (ou l se array vazio)
 f_candle_set_low(array<Candle> candles, float l) =>
     float _l = l
     if candles.size() > 0
@@ -593,9 +544,6 @@ f_candle_set_low(array<Candle> candles, float l) =>
                 _l := candles.get(i).l
     _l
 
-// @description  Encontra o high global entre todos os slots HTF ativos.
-//               Itera os 6 slots respeitando show + valid + max_sets.
-// @returns      Maior high de todos os candles HTF renderizados
 f_candles_high() =>
     h = 0.0
     int cnt = 0
@@ -614,9 +562,6 @@ f_candles_high() =>
         h := f_candle_set_high(htf6.candles, h)
     h
 
-// @description  Encontra o low global entre todos os slots HTF ativos.
-// @param h      High global (usado como valor inicial do acumulador)
-// @returns      Menor low de todos os candles HTF renderizados
 f_candles_low(float h) =>
     l = h
     int cnt = 0
@@ -637,50 +582,24 @@ f_candles_low(float h) =>
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔧 FUNÇÕES RSI
-//    Cálculo do RSI e preços-alvo reversos. O RSI é decomposto em
-//    componentes EMA (avg up / avg down change) para permitir cálculo
-//    inverso: "qual preço faria o RSI atingir N?".
 // ═══════════════════════════════════════════════════════════════════════════
-
-// @description  Calcula comprimento EMA equivalente ao período RSI.
-//               Fórmula: max(1, 2 * rsi_length - 1). Necessário para
-//               extração dos componentes avg_up e avg_down via ta.ema.
-// @returns      Comprimento inteiro da EMA
 f_rsi_ema_length() => math.max(1, 2 * i_rsi_length - 1)
 
-// @description  Retorna par [bgcolor, txt_color] baseado no valor RSI.
-//               Escala: ≤ 20 (verde escuro) → 45-55 (branco neutro) → ≥ 80 (vermelho).
-// @param r      Valor RSI (0-100) ou na
-// @returns      [color fundo, color texto] para uso em table.cell
 f_rsi_color(float r) =>
     switch
-        na(r) => [color.new(#272727, 0), color.white]
-        r < 20 => [color.new(#006400, 0), color.white]
-        r < 30 => [color.new(#00A863, 20), color.white]
-        r < 45 => [color.new(#ceecce, 5), color.rgb(0, 0, 0)]
-        r <= 55 => [color.new(#ffffff, 0), color.rgb(0, 0, 0)]
-        r < 70 => [color.new(#f7d1cf, 0), color.rgb(0, 0, 0)]
-        r < 80 => [color.new(#c25e5e, 15), color.white]
-        => [color.new(#b10000, 0), color.white]
+        na(r)   => [color.new(#44475a, 0), color.new(#6272a4, 0)]  // Sem dado → Dracula comment
+        r < 20  => [color.new(#14755f, 0), color.new(#f8f8f2, 0)]  // Muito sobrevendido → ciano escuro
+        r < 30  => [color.new(#3de1c7, 0), color.new(#282a36, 0)]  // Sobrevendido → ciano médio
+        r < 44  => [color.new(#b5f9ef, 0), color.new(#282a36, 0)]  // Leve alta → ciano pastel
+        r <= 55 => [color.new(#282a36, 0), color.new(#f8f8f2, 0)]  // Neutro → fundo Dracula
+        r < 70  => [color.new(#ffb8d0, 0), color.new(#282a36, 0)]  // Leve baixa → rosa pastel
+        r < 80  => [color.new(#ff4d8d, 0), color.new(#282a36, 0)]  // Sobrecomprado → rosa médio
+        =>         [color.new(#8b1048, 0), color.new(#f8f8f2, 0)]  // Muito sobrecomprado → rosa escuro
 
-// @description  Valida se os componentes RSI são válidos para cálculo de preço.
-// @param c      Close do timeframe
-// @param au     EMA dos ganhos (avg up change)
-// @param ad     EMA das perdas (avg down change)
-// @returns      true se todos os valores são não-na e positivos
+
 f_rsi_is_valid(float c, float au, float ad) =>
     not na(c) and not na(au) and not na(ad) and c > 0 and au >= 0 and ad >= 0
 
-// @description  Cálculo reverso do RSI: dado um RSI-alvo, calcula qual preço
-//               o ativo precisaria atingir na próxima barra.
-//               Usa a fórmula inversa do RSI Wilder com clamp (±max_deviation%).
-//               Para RSI < 50: resolve pelo lado da perda (d_loss).
-//               Para RSI ≥ 50: resolve pelo lado do ganho (d_gain).
-// @param target_rsi  Nível RSI desejado (1-99)
-// @param close_val   Preço de fechamento atual
-// @param auc_val     EMA dos ganhos médios (avg up change)
-// @param adc_val     EMA das perdas médias (avg down change)
-// @returns           Preço que produziria o RSI-alvo, ou na se inválido
 f_rsi_calc_price(float target_rsi, float close_val, float auc_val, float adc_val) =>
     if not f_rsi_is_valid(close_val, auc_val, adc_val) or target_rsi <= 0 or target_rsi >= 100
         na
@@ -709,26 +628,13 @@ f_rsi_calc_price(float target_rsi, float close_val, float auc_val, float adc_val
                 max_p = close_val * (1 + i_rsi_max_deviation)
                 math.max(min_p, math.min(max_p, calc_price))
 
-// @description  Empacota close, RSI e componentes EMA em uma tupla de 4 valores.
-//               Usado como callback para request.security (uma chamada por TF).
-// @returns      [close, rsi, avg_up_change, avg_down_change]
 f_rsi_pack() =>
     emaLen = f_rsi_ema_length()
     [close, ta.rsi(close, i_rsi_length), ta.ema(math.max(close - close[1], 0), emaLen), ta.ema(math.max(close[1] - close, 0), emaLen)]
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔧 FUNÇÕES FVG GRÁFICO
-//    Detecção, renderização e gerenciamento de Fair Value Gaps no
-//    gráfico principal. Inclui threshold adaptativo por timeframe,
-//    mitigação configurável (25%/50%/100%) e expiração por idade.
 // ═══════════════════════════════════════════════════════════════════════════
-
-// @description  Calcula multiplicador de threshold baseado no timeframe.
-//               Interpolação linear entre faixas: 1s→60 (0.5x), 5m (0.75x),
-//               15m (1.0x), 1H (1.5x), 4H (2.2x), 1D (4.0x), >1D (8.0x).
-//               Resultado clampado por i_fvg_max_multiplier.
-// @param tf_sec  Duração do timeframe em segundos
-// @returns       Multiplicador float para ajustar o threshold
 f_fvg_get_tf_multiplier(int tf_sec) =>
     float result = switch
         tf_sec <= 60 => 0.5
@@ -740,12 +646,6 @@ f_fvg_get_tf_multiplier(int tf_sec) =>
         => 8.0
     math.min(i_fvg_max_multiplier, result)
 
-// @description  Calcula o nível de preço que define mitigação de um FVG.
-// @param top      Topo do FVG
-// @param bottom   Base do FVG
-// @param mitType  Tipo: '100%' = toque completo, '50%' = meio, '25%' = conservador
-// @param isBull   true para FVG de alta (preço cai até o gap)
-// @returns        Nível de preço que, se alcançado, mitiga o FVG
 f_fvg_get_mitigation_level(float top, float bottom, string mitType, bool isBull) =>
     if mitType == '100% (Completo)'
         isBull ? bottom : top
@@ -754,8 +654,6 @@ f_fvg_get_mitigation_level(float top, float bottom, string mitType, bool isBull)
     else
         (top + bottom) / 2.0
 
-// @description  Renderiza o FVG como um box no gráfico (xloc.bar_time).
-//               A largura é birthTime + (tf_sec * ms * extend_bars).
 method draw(FVG this) =>
     if not na(this) and this.isActive
         x1 = this.birthTime
@@ -763,9 +661,6 @@ method draw(FVG this) =>
         boxColor = this.isBull ? i_fvg_bull_color : i_fvg_bear_color
         this.boxObj := box.new(left=x1, top=this.top, right=x2, bottom=this.bottom, xloc=xloc.bar_time, border_color=na, bgcolor=boxColor)
 
-// @description  Remove o FVG: deleta o box e marca isActive = false.
-// @param wasMitigated     Se foi removido por mitigação (vs. expiração)
-// @param mitigationPrice  Preço onde ocorreu a mitigação (reservado para uso futuro)
 method remove(FVG this, bool wasMitigated, float mitigationPrice) =>
     if not na(this)
         if not na(this.boxObj)
@@ -773,9 +668,6 @@ method remove(FVG this, bool wasMitigated, float mitigationPrice) =>
             this.boxObj := na
         this.isActive := false
 
-// @description  Verifica se o preço atual mitigou este FVG.
-//               Para bull: low <= nível de mitigação. Para bear: high >= nível.
-// @returns      [isMitigated (bool), mitigationLevel (float)]
 method checkMitigation(FVG this) =>
     bool isMitigated = false
     float mitigationLevel = f_fvg_get_mitigation_level(this.top, this.bottom, i_fvg_mitigation_type, this.isBull)
@@ -783,19 +675,13 @@ method checkMitigation(FVG this) =>
         isMitigated := this.isBull ? (low <= mitigationLevel) : (high >= mitigationLevel)
     [isMitigated, mitigationLevel]
 
-// @description  Verifica se o FVG expirou por idade (barras desde criação > max_age).
-// @returns      true se expirado
 method isExpired(FVG this) =>
-    if g_tf_seconds <= 0
+    if this.birthBarIndex < 0
         false
     else
-        barsAge = int((time - this.birthTime) / (g_tf_seconds * MS_PER_SECOND))
+        barsAge = bar_index - this.birthBarIndex
         barsAge > i_fvg_max_age
 
-// @description  Detecta FVGs (3-bar pattern) na barra atual.
-//               Bull FVG: low > high[2] (gap acima). Bear FVG: high < low[2] (gap abaixo).
-//               Threshold pode ser fixo (% do preço) ou automático (baseado em ATR).
-// @returns      [isBullFvg, isBearFvg, FVG object, threshold usado, valor ATR]
 f_fvg_detect() =>
     float atr_value = i_fvg_auto_threshold or i_fvg_debug ? ta.atr(i_atr_period) : na
     float threshold = na
@@ -817,25 +703,12 @@ f_fvg_detect() =>
     isBullFvg = low > high[2] and bullGapSize > threshold
     isBearFvg = high < low[2] and bearGapSize > threshold
     bool hasEnoughBars = bar_index >= 2 and not na(time[2])
-    FVG newFvg = isBullFvg and hasEnoughBars ? FVG.new(low, high[2], true, time[2], na, na, true) :
-                 isBearFvg and hasEnoughBars ? FVG.new(low[2], high, false, time[2], na, na, true) :
-                 FVG.new(na, na, false, 0, na, na, false)
+    FVG newFvg = isBullFvg and hasEnoughBars ? FVG.new(low, high[2], true, time[2], bar_index - 2, na, na, true) : isBearFvg and hasEnoughBars ? FVG.new(low[2], high, false, time[2], bar_index - 2, na, na, true) : FVG.new(na, na, false, 0, -1, na, na, false)
     [isBullFvg, isBearFvg, newFvg, threshold, atr_value]
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🧱 MÉTODOS CANDLESET
-//    Métodos que operam sobre instâncias de CandleSet.
-//    Pipeline principal: Monitor() → UpdateTime() → Update() → FindImbalance()
-//    - Monitor: detecta novo candle HTF e cria objetos gráficos
-//    - UpdateTime: atualiza OHLC do candle mais recente com dados da barra atual
-//    - Update/Reorder: reposiciona todos os elementos visuais no gráfico
-//    - FindImbalance: detecta FVGs/VIs entre os candles HTF
 // ═══════════════════════════════════════════════════════════════════════════
-
-// @description  Atualiza o candle HTF mais recente com OHLC da barra atual.
-//               Executa a cada barra para manter o candle "vivo" atualizado.
-// @param offset  Posição horizontal atual (não utilizado diretamente aqui)
-// @returns       O próprio CandleSet (fluent interface)
 method UpdateTime(CandleSet candleSet, int offset) =>
     if candleSet.candles.size() > 0
         Candle candle = candleSet.candles.get(0)
@@ -849,14 +722,9 @@ method UpdateTime(CandleSet candleSet, int offset) =>
             candle.l_idx := bar_index
     candleSet
 
-// @description  Reposiciona visualmente todos os candles, labels e imbalances.
-//               Calcula posição bar_index + offset para cada candle no array.
-//               Também cria/atualiza labels de nome do TF, timer e DOW.
-// @param offset  Posição horizontal inicial (bar_index + offset)
-// @returns       O próprio CandleSet (fluent interface)
 method Reorder(CandleSet candleSet, int offset) =>
     size = candleSet.candles.size()
-    if size > 0
+    if size > 0 and (barstate.isnew or barstate.islast or barstate.isrealtime)
         for i = size - 1 to 0
             Candle candle = candleSet.candles.get(i)
             t_buffer = offset + (settings.width + settings.buffer) * (size - i - 1)
@@ -924,12 +792,6 @@ method Reorder(CandleSet candleSet, int offset) =>
             box.set_right(imb.b, bar_index + t_buf1 + settings.width)
     candleSet
 
-// @description  Atualiza visualmente o candle mais recente (body, wick, cores)
-//               e opcionalmente desenha trace lines (OHLC → candles HTF).
-//               Chama Reorder() internamente para reposicionar tudo.
-// @param offset     Posição horizontal inicial
-// @param showTrace  Se true, desenha/atualiza as trace lines OHLC
-// @returns          O próprio CandleSet (fluent interface)
 method Update(CandleSet candleSet, int offset, bool showTrace) =>
     candleSet.Reorder(offset)
     if candleSet.candles.size() > 0
@@ -982,20 +844,15 @@ method Update(CandleSet candleSet, int offset, bool showTrace) =>
                     trace.l_l := label.new(bar_index + t_buffer + settings.width, candle.l, str.tostring(candle.l, format.mintick), color=color_transparent, textcolor=settings.label_color, style=label.style_label_left, size=settings.label_size)
     candleSet
 
-// @description  Detecta FVGs e Volume Imbalances entre os candles HTF do set.
-//               Só executa na última barra (isrealtime/islast) para performance.
-//               FVG: 3-bar pattern (candle i vs candle i+2).
-//               VI: 2-bar pattern (candle i vs candle i+1).
-//               A cada novo candle, limpa imbalances antigos e recalcula tudo.
-// @returns      O próprio CandleSet (fluent interface)
 method FindImbalance(CandleSet candleSet) =>
     int candleCount = candleSet.candles.size()
     if candleCount >= 3 and (barstate.isrealtime or barstate.islast)
         Candle lastCandle = candleSet.candles.get(candleCount - 1)
         int currentCandleIdx = lastCandle.o_idx
         int lastProcessedIdx = candleSet.imbalances.size() > 0 ? candleSet.imbalances.get(candleSet.imbalances.size() - 1).idx : -1
-        bool isNewCandle = currentCandleIdx > lastProcessedIdx or lastProcessedIdx == -1
-        if isNewCandle
+        // [FIX v1.2.2] Dirty flag: só reprocessa se há candle novo
+        bool isNewCandle = currentCandleIdx != lastProcessedIdx
+        if isNewCandle and (barstate.isconfirmed or barstate.ishistory)
             if candleSet.imbalances.size() > 0
                 for i = candleSet.imbalances.size() - 1 to 0
                     Imbalance del = candleSet.imbalances.get(i)
@@ -1039,11 +896,6 @@ method FindImbalance(CandleSet candleSet) =>
                         candleSet.imbalances.push(imb)
     candleSet
 
-// @description  Detecta início de novo candle HTF e cria objetos gráficos.
-//               Usa time(htf) + ta.change para detectar abertura de novo período.
-//               Anti-repaint: só cria em barstate.isconfirmed || ishistory.
-//               Remove o candle mais antigo se exceder max_display (FIFO).
-// @returns      O próprio CandleSet (fluent interface)
 // [FIX v1.2.0] Monitor usa timeframe.in_seconds
 method Monitor(CandleSet candleSet) =>
     // [FIX v1.2.0] Usa forma nativa simples para alinhar com o mercado
@@ -1079,24 +931,14 @@ method Monitor(CandleSet candleSet) =>
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📊 CÁLCULOS & REQUEST.SECURITY
-//    Executa cálculos globais (EMA, RSI, componentes RSI) e busca dados
-//    de múltiplos timeframes via request.security (5 chamadas RSI + 1 FVG).
-//    Resultados são armazenados nos arrays globais g_rsi_*.
-//    [FIX v1.2.0] request.security desenrolado — Pine v6 proíbe dentro de loops.
 // ═══════════════════════════════════════════════════════════════════════════
 
+ema_value = ta.ema(i_emaSource, i_emaLength)
+rsiEmaLength = f_rsi_ema_length()
+rsi_current = ta.rsi(close, i_rsi_length)
+auc_current = ta.ema(math.max(close - close[1], 0), rsiEmaLength)
+adc_current = ta.ema(math.max(close[1] - close, 0), rsiEmaLength)
 
-// --- Cálculos locais do TF atual ---
-ema_value = ta.ema(i_emaSource, i_emaLength)            // EMA para plot no gráfico
-rsiEmaLength = f_rsi_ema_length()                        // Comprimento EMA p/ componentes RSI
-rsi_current = ta.rsi(close, i_rsi_length)                // RSI do TF atual (usado nos alertas)
-auc_current = ta.ema(math.max(close - close[1], 0), rsiEmaLength)  // Avg up change (TF atual)
-adc_current = ta.ema(math.max(close[1] - close, 0), rsiEmaLength)  // Avg down change (TF atual)
-
-
-// --- Busca dados RSI de 5 timeframes via request.security ---
-// Cada chamada retorna [close, rsi, avg_up, avg_down] do TF correspondente.
-// lookahead=off e gaps=off para evitar repaint e preencher barras sem dados.
 // [FIX v1.2.0] request.security desenrolado — Pine v6 proíbe dentro de loops
 [c1, r1, au1, ad1] = request.security(syminfo.tickerid, i_rsi_tf1, f_rsi_pack(), lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
 [c2, r2, au2, ad2] = request.security(syminfo.tickerid, i_rsi_tf2, f_rsi_pack(), lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
@@ -1104,43 +946,28 @@ adc_current = ta.ema(math.max(close[1] - close, 0), rsiEmaLength)  // Avg down c
 [c4, r4, au4, ad4] = request.security(syminfo.tickerid, i_rsi_tf4, f_rsi_pack(), lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
 [c5, r5, au5, ad5] = request.security(syminfo.tickerid, i_rsi_tf5, f_rsi_pack(), lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
 
-
-// Armazena resultados nos arrays globais (1 índice por TF)
 g_rsi_close.set(0, c1), g_rsi_values.set(0, r1), g_rsi_auc.set(0, au1), g_rsi_adc.set(0, ad1)
 g_rsi_close.set(1, c2), g_rsi_values.set(1, r2), g_rsi_auc.set(1, au2), g_rsi_adc.set(1, ad2)
 g_rsi_close.set(2, c3), g_rsi_values.set(2, r3), g_rsi_auc.set(2, au3), g_rsi_adc.set(2, ad3)
 g_rsi_close.set(3, c4), g_rsi_values.set(3, r4), g_rsi_auc.set(3, au4), g_rsi_adc.set(3, ad4)
 g_rsi_close.set(4, c5), g_rsi_values.set(4, r5), g_rsi_auc.set(4, au5), g_rsi_adc.set(4, ad5)
 
-// --- Detecção de FVG no timeframe configurado (ou TF atual se vazio) ---
 tfFinal = i_fvg_timeframe == '' ? timeframe.period : i_fvg_timeframe
 g_tf_seconds := timeframe.in_seconds(tfFinal)
 [isBull, isBear, detectedFvg, thresholdUsed, atrValue] = request.security(syminfo.tickerid, tfFinal, f_fvg_detect(), lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ⚡ LÓGICA PRINCIPAL - FVG GRÁFICO
-//    Ciclo de vida dos FVGs no gráfico principal:
-//    1. Snapshot: salva g_last_fvg_time para detecção de duplicatas
-//    2. Criação: novo FVG detectado → draw() e push no array ativo
-//    3. Mitigação/Expiração: verifica cada FVG ativo e remove se necessário
-//    4. Garbage collection: limpa tudo se feature desligada
-//    Tudo protegido por barstate.isconfirmed (anti-repaint).
 // ═══════════════════════════════════════════════════════════════════════════
-
-// Passo 1: Snapshot do timestamp antes de processar novo FVG
 if barstate.isconfirmed
     g_prev_fvg_time := g_last_fvg_time
 
-// Passo 2: Se detectou FVG novo (birthTime > último registrado), adiciona
 if i_fvg_enabled and barstate.isconfirmed and (isBull or isBear) and detectedFvg.birthTime > g_last_fvg_time
     if g_active_fvgs.size() < i_fvg_max_count and detectedFvg.isActive
         g_last_fvg_time := detectedFvg.birthTime
         detectedFvg.draw()
         g_active_fvgs.unshift(detectedFvg)
 
-// Passo 3: Mitigação e Expiração dos FVGs ativos
-// Itera sobre os FVGs ativos (limitado por MAX_ITER_PER_BAR para performance).
-// FVGs mitigados ou expirados são marcados para remoção em batch.
 // [FIX v1.2.0] Anti-repaint: mitigação/expiração APENAS em barstate.isconfirmed
 if i_fvg_enabled and barstate.isconfirmed and g_active_fvgs.size() > 0
     if g_fvg_to_remove.size() > 0
@@ -1162,24 +989,17 @@ if i_fvg_enabled and barstate.isconfirmed and g_active_fvgs.size() > 0
         for i = 0 to g_fvg_to_remove.size() - 1
             g_active_fvgs.remove(g_fvg_to_remove.get(i))
 
-
-// Passo 4: Garbage collection quando FVG Feature desligada
 // [FIX v1.2.0] Garbage collection: limpa FVGs quando feature desligada
 if not i_fvg_enabled and g_active_fvgs.size() > 0
     for i = 0 to g_active_fvgs.size() - 1
         fvg = g_active_fvgs.get(i)
         if fvg.isActive
-            fvg.remove(false, na) // Remove o FVG sem considerar mitigação/expiração
-    g_active_fvgs.clear() // Limpa o array de FVGs ativos
-    g_last_fvg_time := 0   // Reseta o timestamp do último FVG
-    g_prev_fvg_time := 0   // Reseta o timestamp do FVG anterior
+            fvg.remove(false, na)
+    g_active_fvgs.clear()
+    g_last_fvg_time := 0
+    g_prev_fvg_time := 0
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 📋 CACHE RSI - PREÇOS-ALVO
-//    Calcula preços que levariam o RSI a níveis específicos (25/30/50/70/75/custom).
-//    Cache só é recalculado quando: barra nova OU última barra mudou de índice.
-//    Evita recalcular a cada tick (performance).
-// ═══════════════════════════════════════════════════════════════════════════
+// === BLOCO DE CACHE RSI ===
 bool use_rsi_25 = i_show_rsi_25
 bool use_rsi_30 = i_show_rsi_30
 bool use_rsi_50 = i_show_rsi_50
@@ -1187,7 +1007,6 @@ bool use_rsi_70 = i_show_rsi_70
 bool use_rsi_75 = i_show_rsi_75
 bool use_rsi_custom = i_show_rsi_custom
 
-// Condição de recalc: barra nova OU última barra com bar_index diferente
 bool should_calculate = barstate.isnew or (barstate.islast and g_last_calc_bar != bar_index)
 if should_calculate
     g_cached_rsi25 := use_rsi_25 ? f_rsi_calc_price(25.0, close, auc_current, adc_current) : na
@@ -1200,14 +1019,12 @@ if should_calculate
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🎨 RENDERIZAÇÃO VISUAL
-//    Plots no gráfico principal: EMA e linhas RSI (preços-alvo cacheados).
-//    São plots de nível superior (top scope) obrigatórios em Pine Script.
 // ═══════════════════════════════════════════════════════════════════════════
 
-// --- EMA ---
+// EMA
 plot(i_showEMA ? ema_value : na, title='EMA', color=i_emaColor, linewidth=i_emaWidth)
 
-// --- RSI Lines: plotam preços-alvo para cada nível RSI ativo ---
+// RSI Lines
 plot(i_show_rsi_25 ? g_cached_rsi25 : na, 'RSI 25', color.new(#00bcd4, 0), 1, plot.style_line)
 plot(i_show_rsi_30 ? g_cached_rsi30 : na, 'RSI 30', color.new(color.red, 0), 1, plot.style_line)
 plot(i_show_rsi_50 ? g_cached_rsi50 : na, 'RSI 50', color.new(color.gray, 0), 1, plot.style_line)
@@ -1215,13 +1032,10 @@ plot(i_show_rsi_70 ? g_cached_rsi70 : na, 'RSI 70', color.new(color.green, 0), 1
 plot(i_show_rsi_75 ? g_cached_rsi75 : na, 'RSI 75', color.new(#ff5722, 0), 1, plot.style_line)
 plot(i_show_rsi_custom ? g_cached_rsi_custom : na, 'RSI Custom', i_rsi_custom_color, 2, plot.style_line)
 
-// --- TABELA RSI MTF ---
-// Tabela interativa com RSI de 5 TFs + colunas opcionais de preço-alvo.
-// A tabela é recriada quando a configuração de colunas muda.
-// Cores das células: escala de f_rsi_color() (verde=oversold, vermelho=overbought).
-bool show_col1 = i_table_show_col1     // Coluna de preço-alvo para nível col1
-bool show_col2 = i_table_show_col2     // Coluna de preço-alvo para nível col2
-int total_cols = 2                     // TF + RSI (base) + colunas opcionais
+// === TABELA RSI MTF ===
+bool show_col1 = i_table_show_col1
+bool show_col2 = i_table_show_col2
+int total_cols = 2
 int col_p1 = na
 if show_col1
     col_p1 := total_cols
@@ -1236,6 +1050,7 @@ pos_rsi = switch i_table_position
     'top_left' => position.top_left
     'bottom_right' => position.bottom_right
     => position.bottom_left
+
 
 if i_table_show and barstate.islast
     int current_col_config = (show_col1 ? 1 : 0) + (show_col2 ? 2 : 0)
@@ -1267,26 +1082,17 @@ if i_table_show and barstate.islast
             txt2 = (not na(rsi_val) and rsi_val >= i_table_col2_level) ? color.new(#282a36, 0) : color.new(#f8f8f2, 0)
             table.cell(g_rsi_table, col_p2, i+1, na(p2) ? "—" : str.tostring(p2, format.mintick), bgcolor=bg2, text_color=txt2, text_size=size.normal)
 
-// [FIX v1.2.0] Garbage collection: limpa tabela RSI quando feature desligada
-if not i_table_show and not na(g_rsi_table)
-    table.delete(g_rsi_table)
-    g_rsi_table := na
-    g_prev_col_config := 0
+
+
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📊 LÓGICA ICT - HTF CANDLES
-//    Pipeline principal de cada slot HTF:
-//    1. UpdateTime: atualiza OHLC do candle vivo com dados da barra atual
-//    2. Monitor:    detecta novo candle HTF e cria objetos gráficos
-//    3. Update:     reposiciona e redesenha tudo (+ trace lines se aplicável)
-//    4. FindImbalance: detecta FVGs/VIs entre os candles do slot
-//    Offset é acumulado entre slots para posicionar lado a lado.
 // ═══════════════════════════════════════════════════════════════════════════
-int cnt = 0            // Contador de slots já renderizados
-int last = f_htf_enabled()   // Total de slots habilitados (max = settings.max_sets)
-int offset = settings.offset // Posição horizontal inicial (à direita do gráfico)
+int cnt = 0
+int last = f_htf_enabled()
+int offset = settings.offset
 
-// --- Slot HTF 1 ---
 if htf1.settings.show and f_valid_timeframe(htf1.settings.htf)
     bool showTrace = (settings.trace_anchor == 'First Timeframe') or (settings.trace_anchor == 'Last Timeframe' and settings.max_sets == 1)
     htf1.UpdateTime(offset)
@@ -1294,7 +1100,6 @@ if htf1.settings.show and f_valid_timeframe(htf1.settings.htf)
     cnt += 1
     offset += htf1.candles.size() * settings.width + (htf1.candles.size() > 0 ? (htf1.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
 
-// --- Slot HTF 2 ---
 if htf2.settings.show and f_valid_timeframe(htf2.settings.htf) and cnt < last
     bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe' and cnt == last - 1)
     htf2.UpdateTime(offset)
@@ -1302,7 +1107,6 @@ if htf2.settings.show and f_valid_timeframe(htf2.settings.htf) and cnt < last
     cnt += 1
     offset += htf2.candles.size() * settings.width + (htf2.candles.size() > 0 ? (htf2.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
 
-// --- Slot HTF 3 ---
 if htf3.settings.show and f_valid_timeframe(htf3.settings.htf) and cnt < last
     bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe' and cnt == last - 1)
     htf3.UpdateTime(offset)
@@ -1310,7 +1114,6 @@ if htf3.settings.show and f_valid_timeframe(htf3.settings.htf) and cnt < last
     cnt += 1
     offset += htf3.candles.size() * settings.width + (htf3.candles.size() > 0 ? (htf3.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
 
-// --- Slot HTF 4 ---
 if htf4.settings.show and f_valid_timeframe(htf4.settings.htf) and cnt < last
     bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe' and cnt == last - 1)
     htf4.UpdateTime(offset)
@@ -1318,7 +1121,6 @@ if htf4.settings.show and f_valid_timeframe(htf4.settings.htf) and cnt < last
     cnt += 1
     offset += htf4.candles.size() * settings.width + (htf4.candles.size() > 0 ? (htf4.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
 
-// --- Slot HTF 5 ---
 if htf5.settings.show and f_valid_timeframe(htf5.settings.htf) and cnt < last
     bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe' and cnt == last - 1)
     htf5.UpdateTime(offset)
@@ -1326,25 +1128,72 @@ if htf5.settings.show and f_valid_timeframe(htf5.settings.htf) and cnt < last
     cnt += 1
     offset += htf5.candles.size() * settings.width + (htf5.candles.size() > 0 ? (htf5.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
 
-// --- Slot HTF 6 ---
 if htf6.settings.show and f_valid_timeframe(htf6.settings.htf) and cnt < last
     bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe')
     htf6.UpdateTime(offset)
     htf6.Monitor().Update(offset, showTrace).FindImbalance()
 
+f_cleanup_candle_set(CandleSet candleSet) =>
+    if candleSet.candles.size() > 0
+        for i = candleSet.candles.size() - 1 to 0
+            c = candleSet.candles.get(i)
+            box.delete(c.body)
+            line.delete(c.wick_up)
+            line.delete(c.wick_down)
+            if not na(c.dow_label)
+                c.dow_label.delete()
+        candleSet.candles.clear()
+    if candleSet.imbalances.size() > 0
+        for i = candleSet.imbalances.size() - 1 to 0
+            box.delete(candleSet.imbalances.get(i).b)
+        candleSet.imbalances.clear()
+    if not na(candleSet.tfNameTop)
+        candleSet.tfNameTop.delete()
+        candleSet.tfNameTop := na
+    if not na(candleSet.tfNameBottom)
+        candleSet.tfNameBottom.delete()
+        candleSet.tfNameBottom := na
+    if not na(candleSet.tfTimerTop)
+        candleSet.tfTimerTop.delete()
+        candleSet.tfTimerTop := na
+    if not na(candleSet.tfTimerBottom)
+        candleSet.tfTimerBottom.delete()
+        candleSet.tfTimerBottom := na
+// [FIX v1.2.2] Garbage collection ao desativar HTF
+if not htf1.settings.show and prev_show_htf1
+    f_cleanup_candle_set(htf1)
+if not htf2.settings.show and prev_show_htf2
+    f_cleanup_candle_set(htf2)
+if not htf3.settings.show and prev_show_htf3
+    f_cleanup_candle_set(htf3)
+if not htf4.settings.show and prev_show_htf4
+    f_cleanup_candle_set(htf4)
+if not htf5.settings.show and prev_show_htf5
+    f_cleanup_candle_set(htf5)
+if not htf6.settings.show and prev_show_htf6
+    f_cleanup_candle_set(htf6)
+
+// [FIX v1.2.0] Garbage collection: limpa tabela RSI quando feature desligada
+if not i_table_show and not na(g_rsi_table)
+    table.delete(g_rsi_table)
+    g_rsi_table := na
+    g_prev_col_config := 0
+
+prev_show_htf1 := htf1.settings.show
+prev_show_htf2 := htf2.settings.show
+prev_show_htf3 := htf3.settings.show
+prev_show_htf4 := htf4.settings.show
+prev_show_htf5 := htf5.settings.show
+prev_show_htf6 := htf6.settings.show
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔍 DEBUG MODE
-//    Tabela de diagnóstico exibida no canto inferior esquerdo.
-//    Mostra: FVGs ativos, modo de threshold, ATR, mitigação, TF seconds,
-//    e detalhes do último FVG. Útil para desenvolvimento e troubleshooting.
-//    Garbage collection: tabela deletada quando debug é desligado.
 // ═══════════════════════════════════════════════════════════════════════════
 // [FIX v1.2.0] Protegido contra NaN — usa nz() e na() checks
 
 if i_fvg_debug
     if na(g_debug_table)
         g_debug_table := table.new(position.bottom_left, 2, 8, bgcolor=color.new(#282a36, 0), border_width=2, border_color=color.new(#bd93f9, 0))
-        table.cell(g_debug_table, 0, 0, '🔍 FVG Debug V1.2.0', text_color=color.new(#f8f8f2, 0), bgcolor=color.new(#6272a4, 0))
+        table.cell(g_debug_table, 0, 0, '🔍 FVG Debug V1.2.2', text_color=color.new(#f8f8f2, 0), bgcolor=color.new(#6272a4, 0))
         table.merge_cells(g_debug_table, 0, 0, 1, 0)
     if barstate.islast
         activeCount = g_active_fvgs.size()
@@ -1374,14 +1223,7 @@ else if not i_fvg_debug and not na(g_debug_table)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔔 ALERTAS
-//    Condições de alerta para integração com TradingView alerts.
-//    - Novo FVG Bull/Bear: usa g_prev_fvg_time (snapshot) para detectar
-//      que um FVG foi adicionado nesta barra (anti-duplicata).
-//    - RSI Cross 70/30: cruzamento clássico de sobrecompra/sobrevenda.
-//    Todos protegidos por barstate.isconfirmed (anti-repaint).
 // ═══════════════════════════════════════════════════════════════════════════
-
-// Variáveis auxiliares de alerta (necessário fora do bloco if)
 // g_prev_fvg_time: snapshot do g_last_fvg_time ANTES de adicionar novo FVG
 // g_last_fvg_time: atualizado APÓS adicionar novo FVG
 // Necessário para que alertcondition detecte o FVG recém-adicionado
@@ -1390,7 +1232,6 @@ bool fvg_is_new = detectedFvg.birthTime > nz(g_prev_fvg_time, 0)
 bool new_bull_fvg = i_fvg_enabled and barstate.isconfirmed and isBull and fvg_is_new and fvg_can_be_added and detectedFvg.isActive
 bool new_bear_fvg = i_fvg_enabled and barstate.isconfirmed and isBear and fvg_is_new and fvg_can_be_added and detectedFvg.isActive
 
-// --- Alertconditions (configuráveis no painel de alertas do TradingView) ---
 alertcondition(new_bull_fvg, title="Novo FVG de Alta", message="🟢 Novo FVG de Alta Detectado!")
 alertcondition(new_bear_fvg, title="Novo FVG de Baixa", message="🔴 Novo FVG de Baixa Detectado!")
 alertcondition(ta.crossover(rsi_current, 70.0), title="RSI Sobrecomprado (>70)", message="⚠️ RSI Cruzou 70 para cima")
