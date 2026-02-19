@@ -896,11 +896,8 @@ method FindImbalance(CandleSet candleSet) =>
                         candleSet.imbalances.push(imb)
     candleSet
 
-// [FIX v1.2.0] Monitor usa timeframe.in_seconds
-method Monitor(CandleSet candleSet) =>
-    // [FIX v1.2.0] Usa forma nativa simples para alinhar com o mercado
-    HTFBarTime = time(candleSet.settings.htf)
-    isNewHTFCandle = ta.change(HTFBarTime) > 0
+// [FIX v1.2.3] Monitor extraído para consistency (evita warnings ta.change)
+method Monitor(CandleSet candleSet, bool isNewHTFCandle) =>
     // Anti-repaint: cria em barra confirmada, com fallback para carga histórica
     if isNewHTFCandle and (barstate.isconfirmed or barstate.ishistory)
         Candle candle = Candle.new()
@@ -1093,45 +1090,53 @@ int cnt = 0
 int last = f_htf_enabled()
 int offset = settings.offset
 
+// [FIX v1.2.3] Pré-calcular triggers de tempo para evitar warnings do compilador
+bool new1 = ta.change(time(htf1.settings.htf)) > 0
+bool new2 = ta.change(time(htf2.settings.htf)) > 0
+bool new3 = ta.change(time(htf3.settings.htf)) > 0
+bool new4 = ta.change(time(htf4.settings.htf)) > 0
+bool new5 = ta.change(time(htf5.settings.htf)) > 0
+bool new6 = ta.change(time(htf6.settings.htf)) > 0
+
 if htf1.settings.show and f_valid_timeframe(htf1.settings.htf)
     bool showTrace = (settings.trace_anchor == 'First Timeframe') or (settings.trace_anchor == 'Last Timeframe' and settings.max_sets == 1)
     htf1.UpdateTime(offset)
-    htf1.Monitor().Update(offset, showTrace).FindImbalance()
+    htf1.Monitor(new1).Update(offset, showTrace).FindImbalance()
     cnt += 1
     offset += htf1.candles.size() * settings.width + (htf1.candles.size() > 0 ? (htf1.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
 
 if htf2.settings.show and f_valid_timeframe(htf2.settings.htf) and cnt < last
     bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe' and cnt == last - 1)
     htf2.UpdateTime(offset)
-    htf2.Monitor().Update(offset, showTrace).FindImbalance()
+    htf2.Monitor(new2).Update(offset, showTrace).FindImbalance()
     cnt += 1
     offset += htf2.candles.size() * settings.width + (htf2.candles.size() > 0 ? (htf2.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
 
 if htf3.settings.show and f_valid_timeframe(htf3.settings.htf) and cnt < last
     bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe' and cnt == last - 1)
     htf3.UpdateTime(offset)
-    htf3.Monitor().Update(offset, showTrace).FindImbalance()
+    htf3.Monitor(new3).Update(offset, showTrace).FindImbalance()
     cnt += 1
     offset += htf3.candles.size() * settings.width + (htf3.candles.size() > 0 ? (htf3.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
 
 if htf4.settings.show and f_valid_timeframe(htf4.settings.htf) and cnt < last
     bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe' and cnt == last - 1)
     htf4.UpdateTime(offset)
-    htf4.Monitor().Update(offset, showTrace).FindImbalance()
+    htf4.Monitor(new4).Update(offset, showTrace).FindImbalance()
     cnt += 1
     offset += htf4.candles.size() * settings.width + (htf4.candles.size() > 0 ? (htf4.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
 
 if htf5.settings.show and f_valid_timeframe(htf5.settings.htf) and cnt < last
     bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe' and cnt == last - 1)
     htf5.UpdateTime(offset)
-    htf5.Monitor().Update(offset, showTrace).FindImbalance()
+    htf5.Monitor(new5).Update(offset, showTrace).FindImbalance()
     cnt += 1
     offset += htf5.candles.size() * settings.width + (htf5.candles.size() > 0 ? (htf5.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
 
 if htf6.settings.show and f_valid_timeframe(htf6.settings.htf) and cnt < last
     bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe')
     htf6.UpdateTime(offset)
-    htf6.Monitor().Update(offset, showTrace).FindImbalance()
+    htf6.Monitor(new6).Update(offset, showTrace).FindImbalance()
 
 f_cleanup_candle_set(CandleSet candleSet) =>
     if candleSet.candles.size() > 0
