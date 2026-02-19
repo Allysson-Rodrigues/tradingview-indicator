@@ -17,6 +17,8 @@ indicator('ICT + FVG + RSI V1.2.2', shorttitle="ICT + FVG Pro 1.2.2", overlay=tr
 //    - Bug Fix: Garbage collection de candles HTF ao desativar o grupo
 //    - Performance: Reorder/Update restritos a barstate.isnew/islast
 //    - Performance: FindImbalance com dirty flag — evita recriação total
+//    - Hotfix: Monitor refatorado para evitar warnings de consistência do Pine v6
+//    - Refactor: Variáveis globais de dirty flag removidas (rastreamento via objeto)
 
 // V1.2.1 (2026-02-14)
 //    - Anti-Repaint: Monitor usa barstate.ishistory em vez de barstate.islast
