@@ -378,13 +378,6 @@ var array<Imbalance> imbalances_4 = array.new<Imbalance>()
 var array<Imbalance> imbalances_5 = array.new<Imbalance>()
 var array<Imbalance> imbalances_6 = array.new<Imbalance>()
 
-var int g_last_imb_idx_1 = -1
-var int g_last_imb_idx_2 = -1
-var int g_last_imb_idx_3 = -1
-var int g_last_imb_idx_4 = -1
-var int g_last_imb_idx_5 = -1
-var int g_last_imb_idx_6 = -1
-
 var bool prev_show_htf1 = true
 var bool prev_show_htf2 = true
 var bool prev_show_htf3 = true
