@@ -37,10 +37,15 @@ The primary goal is to provide a **clear market context**, reducing visual noise
 ## 🛠️ How to Use on TradingView
 1. Open **TradingView**.
 2. Open the **Pine Editor** at the bottom of the screen.
-3. Copy the content from `ICT_FVG_RSI.pine`.
+3. Copy the content from [src/ict_fvg_rsi_v1.2.2.pine](file:///home/allys/projetos/01-projetos/tradingview-indicator/src/ict_fvg_rsi_v1.2.2.pine).
 4. Paste the code into the editor.
 5. Click **"Add to Chart"**.
 6. Adjust the settings in the **Inputs** tab to match your asset and strategy.
+
+---
+
+## 🏗️ Technical Architecture
+For a deep dive into the code logic, types, and anti-repaint measures, see our [ARCHITECTURE.md](file:///home/allys/projetos/01-projetos/tradingview-indicator/.agent/ARCHITECTURE.md).
 
 ---
 
@@ -80,5 +85,5 @@ Created and maintained by **Allysson Rodrigues**
 ---
 
 ## 📄 License
-© Allysson Rodrigues.  
+© Allysson Rodrigues.
 **Educational and Personal Use only.**
