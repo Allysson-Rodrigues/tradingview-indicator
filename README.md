@@ -1,89 +1,59 @@
-# ICT + FVG + RSI (TradingView) 📈
+# ICT + FVG + RSI for TradingView
 
-An advanced technical analysis tool developed in **Pine Script v6** for TradingView. Designed specifically for **Day Trading and Scalping**, this indicator combines **ICT (Inner Circle Trader)** concepts, **Fair Value Gaps (FVG)**, and **Multi-Timeframe (MTF) RSI** into a unified, high-performance dashboard.
+An advanced multi-timeframe analytical engine developed in Pine Script v6. This tool integrates institutional order flow concepts with momentum analysis and fair value gap detection into a high-performance execution dashboard.
 
-The primary goal is to provide a **clear market context**, reducing visual noise while maintaining high performance even on low-timeframe charts.
+## Overview
 
----
+The indicator is engineered to provide high-fidelity market context for active traders, minimizing visual noise while maintaining computational efficiency on high-frequency charts.
 
-## 📌 Core Methodology
-- **Smart Money Concepts (SMC/ICT):** Focus on institutional order flow.
-- **Fair Value Gaps (FVG):** Identification of price imbalances.
-- **Multi-Timeframe (MTF) Analysis:** Correlation between different time horizons.
-- **Momentum via RSI:** Relative strength analysis across multiple periods.
-- **Technical Confluence:** Filtering entries through combined logic.
+### Technical Methodology
+- **Inner Circle Trader (ICT) Framework:** Focus on institutional liquidity and order flow.
+- **Fair Value Gaps (FVG):** Systematic identification and tracking of price imbalances.
+- **Multi-Timeframe (MTF) Analysis:** Real-time correlation across distinct time horizons.
+- **RSI Momentum:** Relative strength index cache system for multi-period momentum tracking.
 
----
+## Technical Specifications
 
-## 🚀 Key Features
-* **HTF Candles:** High-timeframe visibility (up to Weekly) on lower-timeframe charts.
-* **Smart FVG Detection:** Automated detection with configurable mitigation logic.
-* **Dynamic MTF RSI Table:** A compact, real-time dashboard tracking momentum across timeframes.
-* **Adaptive Thresholds:** Parameters that adjust based on **Timeframe or ATR** (Average True Range).
-* **Moving Averages (EMA):** Integrated trend filters.
-* **Optimized Performance:** Clean code built for real-time execution without lag.
-* **Configurable Alerts:** Notifications for FVG formation, mitigation, and RSI conditions.
+- **HTF Candle Projection:** Visualizes up to 6 higher timeframes concurrently.
+- **Automated FVG Management:** Dynamic detection with proprietary mitigation and expiration logic.
+- **MTF RSI Matrix:** Real-time dashboard with inverse RSI target price calculations.
+- **Adaptive Thresholds:** Parameters derived from volatility (ATR) or timeframe-specific scaling.
+- **Trend Filtering:** Integrated Exponential Moving Averages (EMA) with configurable sources.
+- **Zero-Latency Execution:** Optimized for minimal impact on browser and chart performance.
+- **Audit & Alert System:** Granular notifications for gap formation, mitigation, and momentum extremes.
 
----
+## Technical Infrastructure
 
-## 📊 Dashboard & Visualization
-* **MTF RSI Table:** Clear and compact visual data.
-* **Smart Highlighting:** Distinct visual markers for valid vs. mitigated FVGs.
-* **Customizable UI:** Fully adjustable colors and elements via user inputs.
-* **Clean Interface:** Designed to avoid chart clutter.
+For comprehensive details on logic implementation, custom types (UDTs), and anti-repaint protocols, refer to the [Technical Architecture Documentation](.agent/ARCHITECTURE.md).
 
----
+## Deployment
 
-## 🛠️ How to Use on TradingView
-1. Open **TradingView**.
-2. Open the **Pine Editor** at the bottom of the screen.
-3. Copy the content from [src/ict_fvg_rsi_v1.2.2.pine](file:///home/allys/projetos/01-projetos/tradingview-indicator/src/ict_fvg_rsi_v1.2.2.pine).
-4. Paste the code into the editor.
-5. Click **"Add to Chart"**.
-6. Adjust the settings in the **Inputs** tab to match your asset and strategy.
+1. Initialize the **Pine Editor** within your TradingView terminal.
+2. Copy the source code from [src/ict_fvg_rsi_v1.2.2.pine](src/ict_fvg_rsi_v1.2.2.pine).
+3. Append the script to your chart and initialize via the **Add to Chart** command.
+4. Calibrate parameters via the **Inputs** interface based on specific asset volatility.
 
----
+### Recommended Configurations
+- **Scalping:** 1m/3m/5m horizons.
+- **Intraday:** 5m/15m execution with 1H/4H context.
+- **Swing:** 1H/4H execution with Daily/Weekly context.
 
-## 🏗️ Technical Architecture
-For a deep dive into the code logic, types, and anti-repaint measures, see our [ARCHITECTURE.md](file:///home/allys/projetos/01-projetos/tradingview-indicator/.agent/ARCHITECTURE.md).
+## Best Practices
 
----
+- **Execution Confluence:** Prioritize entries where FVG formation aligns with RSI momentum and HTF trend.
+- **Dynamic Calibration:** Adjust gap thresholds based on the specific asset's Average True Range.
+- **Analytical Bias:** This tool is designed to support discretionary decision-making, not for autonomous execution without human verification.
 
-## ⚙️ Recommended Timeframes
-* **Scalping:** 1m / 3m / 5m
-* **Day Trading:** 5m / 15m
-* **HTF Context:** 1H / 4H / Daily
+## Versioning & Support
 
-*Note: The indicator adapts automatically, but fine-tuning parameters per asset is recommended.*
+- **Current Release:** v1.2.2
+- **Compiler:** Pine Script v6
+- **Lead Developer:** Allysson Rodrigues ([GitHub](https://github.com/Allysson-Rodrigues))
 
 ---
 
-## 📈 Best Practices
-* **Seek Confluence:** Always look for the alignment of FVG + RSI + HTF Context.
-* **Avoid Sideways Markets:** Use the trend filters to stay out of low-probability ranges.
-* **Risk Management:** Never trade without a defined plan and stop loss.
-* **Not a Black Box:** This tool is designed to assist analysis, not to be used as a blind "buy/sell" signal generator.
+### Legal Disclaimer
+This software is provided for research and educational purposes. Trading financial instruments carries high risk. The author holds no liability for financial outcomes resulting from the use of this technical tool.
 
----
-
-## ⚠️ Legal Disclaimer
-This indicator is for **educational and research purposes only**. It does not constitute investment or financial advice. The author is not responsible for any financial losses incurred from the use of this script. Trading involves significant risk.
-
----
-
-## 🧩 Technical Details
-* **Current Version:** v1.2.2
-* **Pine Script Version:** v6
-* **Status:** Active Development
-
----
-
-## 👤 Author
-Created and maintained by **Allysson Rodrigues**
-* GitHub: [Allysson-Rodrigues](https://github.com/Allysson-Rodrigues)
-
----
-
-## 📄 License
-© Allysson Rodrigues.
-**Educational and Personal Use only.**
+### License
+© Allysson Rodrigues. Proprietary software for personal and educational use.
