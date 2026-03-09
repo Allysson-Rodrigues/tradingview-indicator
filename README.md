@@ -30,4 +30,4 @@ A comprehensive implementation of Inner Circle Trader (ICT) concepts, specifical
 ---
 
 **Allysson Rodrigues**
-Backend Developer | Algorithmic Trader
+Algorithmic Trader
