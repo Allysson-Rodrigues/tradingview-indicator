@@ -4,19 +4,21 @@ This repository contains algorithmic trading tools and custom Pine Script script
 
 ---
 
-### Featured Script: ICT FVG + RSI (v1.2.2)
+### Featured Script: ICT FVG + RSI (v1.2.3)
 
-A comprehensive implementation of Inner Circle Trader (ICT) concepts, specifically targeting Fair Value Gaps (FVG) and Relative Strength Index (RSI) divergences.
+A comprehensive implementation of Inner Circle Trader (ICT) concepts, specifically targeting Fair Value Gaps (FVG), multi-timeframe candle mapping and Relative Strength Index (RSI) target levels.
 
 #### Technical Specifications
 - **Core Logic**: Detects Fair Value Gaps (FVG) across multiple timeframes to identify institutional liquidity voids.
-- **RSI Integration**: Filters signals using momentum divergences to increase probability.
-- **Risk Management**: Integrated calculation of displacement and breakout levels.
+- **RSI Integration**: Calculates projected price levels for configurable RSI thresholds and renders an MTF RSI table.
+- **Visual Structure**: Projects HTF candles, labels, timers and imbalance zones directly over the chart.
 
 #### Key Parameters
-- `FVG Transparency`: Adjusts the visibility of historical gaps.
+- `Threshold ATR Auto`: Normalizes FVG detection with ATR for better cross-asset behavior.
+- `Mitigação`: Defines when a FVG is considered filled (25%, 50% or 100%).
+- `Extensão Temporal`: Controls how far FVG boxes are projected on the time axis.
 - `RSI Length`: Standard 14-period momentum calculation.
-- `Show Broken Gaps`: Toggles display of filled liquidity voids.
+- `Tabela RSI MTF`: Displays RSI values and projected target prices for selected timeframes.
 
 ---
 

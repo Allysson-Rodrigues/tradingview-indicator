@@ -1,16 +1,23 @@
 //@version=6
-indicator('ICT + FVG + RSI V1.2.2', shorttitle="ICT + FVG Pro 1.2.2", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500, max_bars_back=5000)
+indicator('ICT + FVG + RSI V1.2.3', shorttitle="ICT + FVG Pro 1.2.3", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500, max_bars_back=5000)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📌 METADADOS
 // ═══════════════════════════════════════════════════════════════════════════
 // Nome:        ICT + FVG + RSI
-// Versão:      1.2.2
-// Atualizado:  2026-02-19
+// Versão:      1.2.3
+// Atualizado:  2026-03-09
 //
 // ═══════════════════════════════════════════════════════════════════════════
 // 📜 CHANGELOG
 // ═══════════════════════════════════════════════════════════════════════════
+// V1.2.3 (2026-03-09)
+//    - Bug Fix: fluxo HTF reordenado para evitar contaminar o candle anterior na virada do período
+//    - Bug Fix: labels das trace lines agora atualizam texto junto com o preço em tempo real
+//    - Bug Fix: manutenção/remoção de FVGs percorre toda a lista ativa, respeitando o limite configurado
+//    - UX: extensão do FVG renomeada como projeção temporal para refletir o comportamento real no eixo X
+//    - Docs: README alinhado aos recursos realmente implementados no indicador
+//
 // V1.2.2 (2026-02-19)
 //    - Bug Fix: FVG expiração migrada de tempo-relógio para bar_index
 //      (corrige inflação de idade em mercados com gap noturno, ex: ações)
@@ -91,8 +98,6 @@ indicator('ICT + FVG + RSI V1.2.2', shorttitle="ICT + FVG Pro 1.2.2", overlay=tr
 // 🔢 CONSTANTES
 // ═══════════════════════════════════════════════════════════════════════════
 const int MAX_TABLE_ROWS = 7
-const int MAX_ITER_PER_BAR = 20
-const int MAX_REMOVALS = 10
 const int MS_PER_SECOND = 1000
 const int SEC_1H  = 3600
 const int SEC_4H  = 14400
@@ -354,7 +359,7 @@ i_fvg_threshold = input.float(0.3, 'Limiar (%)', minval=0.01, maxval=10, step=0.
 i_fvg_adaptive_tf = input.bool(true, 'Adaptativo TF', group=group_fvg, tooltip='Multiplica o limiar baseado no timeframe')
 i_fvg_max_multiplier = input.float(5.0, 'Mult. Máximo', minval=1.0, maxval=20.0, step=0.5, group=group_fvg, tooltip='Limite máximo do multiplicador adaptativo por timeframe')
 i_fvg_timeframe = input.timeframe('', 'Timeframe', group=group_fvg, tooltip='Timeframe para detecção de FVG (vazio = TF atual)')
-i_fvg_extend_bars = input.int(15, 'Extensão', minval=5, maxval=200, group=group_fvg, tooltip='Quantas barras a caixa FVG se estende para a direita')
+i_fvg_extend_bars = input.int(15, 'Extensão Temporal', minval=5, maxval=200, group=group_fvg, tooltip='Quantidade de períodos do timeframe do FVG usada para projetar a caixa no eixo do tempo. Em mercados com gaps, a projeção é temporal e não representa contagem exata de candles negociados.')
 i_fvg_max_count = input.int(8, 'Máximo FVGs', minval=1, maxval=50, group=group_fvg, tooltip='Número máximo de FVGs ativos simultaneamente')
 i_fvg_max_age = input.int(300, 'Idade Máx', minval=50, maxval=1000, group=group_fvg, tooltip='Remove FVGs não mitigados após esta quantidade de barras')
 i_fvg_bull_color = input.color(color.new(#089981, 85), 'Cor Alta', group=group_fvg, tooltip='Cor das caixas FVG bullish')
@@ -652,6 +657,7 @@ f_fvg_get_mitigation_level(float top, float bottom, string mitType, bool isBull)
 method draw(FVG this) =>
     if not na(this) and this.isActive
         x1 = this.birthTime
+        // A projeção usa tempo-relógio do timeframe do FVG para manter compatibilidade com xloc.bar_time.
         x2 = this.birthTime + (g_tf_seconds * MS_PER_SECOND * i_fvg_extend_bars)
         boxColor = this.isBull ? i_fvg_bull_color : i_fvg_bear_color
         this.boxObj := box.new(left=x1, top=this.top, right=x2, bottom=this.bottom, xloc=xloc.bar_time, border_color=na, bgcolor=boxColor)
@@ -823,18 +829,22 @@ method Update(CandleSet candleSet, int offset, bool showTrace) =>
             if settings.label_show
                 if not na(trace.o_l)
                     label.set_xy(trace.o_l, bar_index + t_buffer + settings.width, candle.o)
+                    label.set_text(trace.o_l, str.tostring(candle.o, format.mintick))
                 else
                     trace.o_l := label.new(bar_index + t_buffer + settings.width, candle.o, str.tostring(candle.o, format.mintick), color=color_transparent, textcolor=settings.label_color, style=label.style_label_left, size=settings.label_size)
                 if not na(trace.c_l)
                     label.set_xy(trace.c_l, bar_index + t_buffer + settings.width, candle.c)
+                    label.set_text(trace.c_l, str.tostring(candle.c, format.mintick))
                 else
                     trace.c_l := label.new(bar_index + t_buffer + settings.width, candle.c, str.tostring(candle.c, format.mintick), color=color_transparent, textcolor=settings.label_color, style=label.style_label_left, size=settings.label_size)
                 if not na(trace.h_l)
                     label.set_xy(trace.h_l, bar_index + t_buffer + settings.width, candle.h)
+                    label.set_text(trace.h_l, str.tostring(candle.h, format.mintick))
                 else
                     trace.h_l := label.new(bar_index + t_buffer + settings.width, candle.h, str.tostring(candle.h, format.mintick), color=color_transparent, textcolor=settings.label_color, style=label.style_label_left, size=settings.label_size)
                 if not na(trace.l_l)
                     label.set_xy(trace.l_l, bar_index + t_buffer + settings.width, candle.l)
+                    label.set_text(trace.l_l, str.tostring(candle.l, format.mintick))
                 else
                     trace.l_l := label.new(bar_index + t_buffer + settings.width, candle.l, str.tostring(candle.l, format.mintick), color=color_transparent, textcolor=settings.label_color, style=label.style_label_left, size=settings.label_size)
     candleSet
@@ -965,10 +975,7 @@ if i_fvg_enabled and barstate.isconfirmed and g_active_fvgs.size() > 0
     if g_fvg_to_remove.size() > 0
         g_fvg_to_remove.clear()
     int arraySize = g_active_fvgs.size()
-    int maxIter = math.min(arraySize, MAX_ITER_PER_BAR)
-    for i = 0 to maxIter - 1
-        if g_fvg_to_remove.size() >= MAX_REMOVALS
-            break
+    for i = 0 to arraySize - 1
         fvg = g_active_fvgs.get(i)
         if fvg.isActive
             [wasMitigated, mitigationPrice] = fvg.checkMitigation()
@@ -1095,43 +1102,37 @@ bool new6 = ta.change(time(htf6.settings.htf)) > 0
 
 if htf1.settings.show and f_valid_timeframe(htf1.settings.htf)
     bool showTrace = (settings.trace_anchor == 'First Timeframe') or (settings.trace_anchor == 'Last Timeframe' and settings.max_sets == 1)
-    htf1.UpdateTime(offset)
-    htf1.Monitor(new1).Update(offset, showTrace).FindImbalance()
+    htf1.Monitor(new1).UpdateTime(offset).Update(offset, showTrace).FindImbalance()
     cnt += 1
     offset += htf1.candles.size() * settings.width + (htf1.candles.size() > 0 ? (htf1.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
 
 if htf2.settings.show and f_valid_timeframe(htf2.settings.htf) and cnt < last
     bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe' and cnt == last - 1)
-    htf2.UpdateTime(offset)
-    htf2.Monitor(new2).Update(offset, showTrace).FindImbalance()
+    htf2.Monitor(new2).UpdateTime(offset).Update(offset, showTrace).FindImbalance()
     cnt += 1
     offset += htf2.candles.size() * settings.width + (htf2.candles.size() > 0 ? (htf2.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
 
 if htf3.settings.show and f_valid_timeframe(htf3.settings.htf) and cnt < last
     bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe' and cnt == last - 1)
-    htf3.UpdateTime(offset)
-    htf3.Monitor(new3).Update(offset, showTrace).FindImbalance()
+    htf3.Monitor(new3).UpdateTime(offset).Update(offset, showTrace).FindImbalance()
     cnt += 1
     offset += htf3.candles.size() * settings.width + (htf3.candles.size() > 0 ? (htf3.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
 
 if htf4.settings.show and f_valid_timeframe(htf4.settings.htf) and cnt < last
     bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe' and cnt == last - 1)
-    htf4.UpdateTime(offset)
-    htf4.Monitor(new4).Update(offset, showTrace).FindImbalance()
+    htf4.Monitor(new4).UpdateTime(offset).Update(offset, showTrace).FindImbalance()
     cnt += 1
     offset += htf4.candles.size() * settings.width + (htf4.candles.size() > 0 ? (htf4.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
 
 if htf5.settings.show and f_valid_timeframe(htf5.settings.htf) and cnt < last
     bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe' and cnt == last - 1)
-    htf5.UpdateTime(offset)
-    htf5.Monitor(new5).Update(offset, showTrace).FindImbalance()
+    htf5.Monitor(new5).UpdateTime(offset).Update(offset, showTrace).FindImbalance()
     cnt += 1
     offset += htf5.candles.size() * settings.width + (htf5.candles.size() > 0 ? (htf5.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
 
 if htf6.settings.show and f_valid_timeframe(htf6.settings.htf) and cnt < last
     bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe')
-    htf6.UpdateTime(offset)
-    htf6.Monitor(new6).Update(offset, showTrace).FindImbalance()
+    htf6.Monitor(new6).UpdateTime(offset).Update(offset, showTrace).FindImbalance()
 
 f_cleanup_candle_set(CandleSet candleSet) =>
     if candleSet.candles.size() > 0
@@ -1193,7 +1194,7 @@ prev_show_htf6 := htf6.settings.show
 if i_fvg_debug
     if na(g_debug_table)
         g_debug_table := table.new(position.bottom_left, 2, 8, bgcolor=color.new(#282a36, 0), border_width=2, border_color=color.new(#bd93f9, 0))
-        table.cell(g_debug_table, 0, 0, '🔍 FVG Debug V1.2.2', text_color=color.new(#f8f8f2, 0), bgcolor=color.new(#6272a4, 0))
+        table.cell(g_debug_table, 0, 0, '🔍 FVG Debug V1.2.3', text_color=color.new(#f8f8f2, 0), bgcolor=color.new(#6272a4, 0))
         table.merge_cells(g_debug_table, 0, 0, 1, 0)
     if barstate.islast
         activeCount = g_active_fvgs.size()

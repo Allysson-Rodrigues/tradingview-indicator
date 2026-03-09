@@ -1,6 +1,13 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // 📜 CHANGELOG
 // ═══════════════════════════════════════════════════════════════════════════
+// V1.2.3 (2026-03-09)
+//    - Bug Fix: fluxo HTF reordenado para evitar contaminar o candle anterior na virada do período
+//    - Bug Fix: labels das trace lines agora atualizam texto junto com o preço em tempo real
+//    - Bug Fix: manutenção/remoção de FVGs percorre toda a lista ativa, respeitando o limite configurado
+//    - UX: extensão do FVG renomeada como projeção temporal para refletir o comportamento real no eixo X
+//    - Docs: README alinhado aos recursos realmente implementados no indicador
+//
 // V1.2.2 (2026-02-19)
 //    - Bug Fix: FVG expiração migrada de tempo-relógio para bar_index
 //      (corrige inflação de idade em mercados com gap noturno, ex: ações)
