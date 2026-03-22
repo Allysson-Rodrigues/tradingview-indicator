@@ -4,14 +4,20 @@ TradingView-focused repository for Pine Script indicators built around structure
 
 ## Featured indicator
 
-### ICT FVG + RSI (v1.2.4)
+### ICT FVG + RSI (v1.2.10)
 
 Main capabilities:
 
 - Fair Value Gap detection across multiple timeframes
 - Higher-timeframe candle projection on the active chart
+- Dynamic-request MTF pipeline for RSI and FVG context reads
+- Shared HTF orchestration helpers to reduce maintenance risk
+- HTF labels and timers synchronized safely when runtime options change
+- Trace lines, trace labels e DOW labels reagem corretamente a mudanças visuais em runtime
+- Sync de trace lines e price labels concentrado em helpers para reduzir manutenção
 - RSI target level projections for configurable thresholds
 - Optional MTF RSI table for faster discretionary review
+- RSI table recreation when the chart corner changes
 - Explicit `Confirmado` or `Tempo Real` handling for HTF `request.security()` data
 
 Key controls exposed to the user:
@@ -27,7 +33,7 @@ Key controls exposed to the user:
 
 ```text
 .
-├── src/ict_fvg_rsi_v1.2.4.pine  Main Pine Script source
+├── src/ict_fvg_rsi_v1.2.10.pine  Main Pine Script source
 ├── CHANGELOG.md                 Versioned release history
 ├── LICENSE
 └── README.md

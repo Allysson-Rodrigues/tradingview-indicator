@@ -1,16 +1,58 @@
 //@version=6
-indicator('ICT + FVG + RSI V1.2.3', shorttitle="ICT + FVG Pro 1.2.3", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500, max_bars_back=5000)
+indicator('ICT + FVG + RSI V1.2.10', shorttitle="ICT + FVG Pro 1.2.10", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500, max_bars_back=5000)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📌 METADADOS
 // ═══════════════════════════════════════════════════════════════════════════
 // Nome:        ICT + FVG + RSI
-// Versão:      1.2.3
-// Atualizado:  2026-03-09
+// Versão:      1.2.10
+// Atualizado:  2026-03-10
 //
 // ═══════════════════════════════════════════════════════════════════════════
 // 📜 CHANGELOG
 // ═══════════════════════════════════════════════════════════════════════════
+// V1.2.10 (2026-03-10)
+//    - Refactor: sincronização de trace lines e price labels extraída para helpers dedicados
+//    - Limpeza: funções auxiliares mortas removidas do bloco RSI/HTF
+//    - Manutenção: redução de duplicação sem alterar lógica visual ou sinais
+//
+// V1.2.9 (2026-03-10)
+//    - UX: trace lines, trace labels e labels HTF agora reaplicam cor, tamanho e espessura em runtime
+//    - UX: DOW labels sincronizam texto e estilo ao alterar inputs visuais
+//    - Manutenção: update visual concentrado sem alterar lógica de sinais
+//
+// V1.2.8 (2026-03-10)
+//    - UX: labels e timers HTF agora sincronizam corretamente ao trocar posição, timer e visibilidade
+//    - UX: tabela RSI é recriada ao mudar a posição para evitar estado visual antigo
+//    - Refactor: ciclo de vida dos labels HTF extraído para helpers dedicados
+//    - Hotfix: fluxo HTF e leituras MTF ajustados para compatibilidade com o compilador Pine v6
+//
+// V1.2.7 (2026-03-10)
+//    - Refactor: orquestração dos grupos HTF centralizada em helpers compartilhados
+//    - Refactor: critério de elegibilidade dos HTFs reutilizado em cálculo e renderização
+//    - Manutenção: avanço de offset HTF extraído para helper único
+//
+// V1.2.6 (2026-03-10)
+//    - Refactor: pipeline RSI MTF consolidado com dynamic requests e helper único
+//    - Performance: request.security é evitado quando o TF consultado é o do gráfico
+//    - Performance: tabela RSI passa a reutilizar células com table.cell_set_*()
+//    - Refactor: leitura FVG MTF centralizada em helper dedicado
+//    - Limpeza: UpdateTime deixa de carregar parâmetro não utilizado
+//
+// V1.2.5 (2026-03-10)
+//    - Bug Fix: timer HTF passa a usar time_close() com fallback visual seguro
+//    - Bug Fix: alertas de novo FVG agora dependem do evento real de inserção
+//    - Bug Fix: trace anchor "Last Timeframe" aponta para o último HTF efetivamente renderizado
+//    - UX: Daily Auto e Weekly Auto respeitam o toggle manual dos HTFs 5 e 6
+//    - UX: trace lines e labels agora são limpos ao desligar a feature ou zerar HTFs renderizados
+//
+// V1.2.4 (2026-03-09)
+//    - Anti-Repaint: request.security agora oferece modo HTF Confirmado ou Tempo Real
+//    - Robustez: FVG custom bloqueia timeframe inferior ao gráfico atual
+//    - Bug Fix: expiração do FVG passa a usar barras do gráfico atual, consistente com TF custom
+//    - Performance: request.security recebe calc_bars_count para reduzir custo de histórico
+//    - UX: inputs dependentes agora são ativados dinamicamente nos grupos EMA, RSI, Tabela e FVG
+//
 // V1.2.3 (2026-03-09)
 //    - Bug Fix: fluxo HTF reordenado para evitar contaminar o candle anterior na virada do período
 //    - Bug Fix: labels das trace lines agora atualizam texto junto com o preço em tempo real
@@ -102,6 +144,9 @@ const int MS_PER_SECOND = 1000
 const int SEC_1H  = 3600
 const int SEC_4H  = 14400
 const int SEC_1D  = 86400
+const int RSI_MTF_SLOT_COUNT = 5
+const int RSI_REQUEST_MIN_BARS = 300
+const int FVG_REQUEST_MIN_BARS = 50
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📦 TYPES
@@ -264,14 +309,12 @@ settings.max_sets := input.int(3, 'Limite HTFs', minval=1, maxval=6, group=group
 i_timezone = input.string('America/Sao_Paulo', 'Fuso Horário', options=['America/Sao_Paulo', 'America/New_York', 'Europe/London', 'Asia/Tokyo', 'UTC'], group=group_htf, tooltip='Fuso horário para cálculo de datas e horários dos candles HTF')
 i_auto_daily = input.bool(true, 'Daily Auto (>=1H)', group=group_htf, tooltip='Mostra MTF Daily apenas quando gráfico está em 1H ou acima')
 i_auto_weekly = input.bool(true, 'Weekly Auto (>=4H)', group=group_htf, tooltip='Mostra MTF Weekly apenas quando gráfico está em 4H ou acima')
+i_htf_security_mode = input.string('Confirmado', 'Modo Dados HTF', options=['Confirmado', 'Tempo Real'], group=group_htf, tooltip='Define como request.security trata timeframes acima do gráfico. Confirmado usa apenas candles HTF fechados para evitar repaint; Tempo Real usa o candle HTF em formação.')
 
 bool showDailyAuto = i_auto_daily and timeframe.in_seconds() >= SEC_1H
-if i_auto_daily
-    SettingsHTF5.show := showDailyAuto
-
 bool showWeeklyAuto = i_auto_weekly and timeframe.in_seconds() >= SEC_4H
-if i_auto_weekly
-    SettingsHTF6.show := showWeeklyAuto
+bool htf5_show = SettingsHTF5.show and (not i_auto_daily or showDailyAuto)
+bool htf6_show = SettingsHTF6.show and (not i_auto_weekly or showWeeklyAuto)
 
 settings.bull_body := input.color(color.new(#089981, 70),'Body Bull/Bear', inline='body', group=group_style, tooltip='Cor do corpo dos candles de alta (esquerda) e baixa (direita)')
 settings.bear_body := input.color(color.new(#f23645, 70), '', inline='body', group=group_style)
@@ -320,10 +363,10 @@ settings.label_color := input.color(color.new(color.black, 10), '', inline='labe
 settings.label_size := input.string(size.small, '', [size.tiny, size.small, size.normal, size.large, size.huge], inline='label', group=group_trace)
 
 i_showEMA = input.bool(false, '⚡ Ativar EMA', group=group_ema, tooltip='Ativa a Média Móvel Exponencial no gráfico')
-i_emaLength = input.int(26, 'Período', minval=1, maxval=500, group=group_ema, tooltip='Número de barras para cálculo da EMA (padrão: 26)')
-i_emaColor = input.color(#4a4a4acc, 'Cor', group=group_ema, tooltip='Cor da linha EMA')
-i_emaWidth = input.int(1, 'Espessura', minval=1, maxval=5, group=group_ema, tooltip='Espessura da linha EMA')
-i_emaSource = input.source(close, 'Fonte', group=group_ema, tooltip='Fonte de dados para cálculo (close, open, high, low, hl2, etc.)')
+i_emaLength = input.int(26, 'Período', minval=1, maxval=500, group=group_ema, tooltip='Número de barras para cálculo da EMA (padrão: 26)', active=i_showEMA)
+i_emaColor = input.color(#4a4a4acc, 'Cor', group=group_ema, tooltip='Cor da linha EMA', active=i_showEMA)
+i_emaWidth = input.int(1, 'Espessura', minval=1, maxval=5, group=group_ema, tooltip='Espessura da linha EMA', active=i_showEMA)
+i_emaSource = input.source(close, 'Fonte', group=group_ema, tooltip='Fonte de dados para cálculo (close, open, high, low, hl2, etc.)', active=i_showEMA)
 
 i_rsi_length = input.int(14, 'Período RSI', minval=2, maxval=200, group=group_rsi, tooltip='Período para cálculo do RSI (padrão: 14)')
 i_show_rsi_25 = input.bool(false, 'Exibir Nível 25', group=group_rsi, tooltip='Plota linha horizontal no preço correspondente a RSI = 25')
@@ -332,41 +375,41 @@ i_show_rsi_50 = input.bool(false, 'Exibir Nível 50', group=group_rsi, tooltip='
 i_show_rsi_70 = input.bool(false, 'Exibir Nível 70', group=group_rsi, tooltip='Plota linha horizontal no preço correspondente a RSI = 70 (sobrecomprado)')
 i_show_rsi_75 = input.bool(false, 'Exibir Nível 75', group=group_rsi, tooltip='Plota linha horizontal no preço correspondente a RSI = 75')
 i_show_rsi_custom = input.bool(false, '⭐ Exibir RSI Customizado', group=group_rsi, tooltip='Plota linha horizontal para um nível RSI personalizado')
-i_rsi_custom_level = input.float(40, 'Nível RSI Customizado', minval=1, maxval=99, step=1, group=group_rsi, tooltip='Define o nível RSI desejado para a linha customizada (1-99)')
-i_rsi_custom_color = input.color(color.new(#ff9800, 0), 'Cor RSI Customizado', group=group_rsi, tooltip='Cor da linha RSI customizada')
+i_rsi_custom_level = input.float(40, 'Nível RSI Customizado', minval=1, maxval=99, step=1, group=group_rsi, tooltip='Define o nível RSI desejado para a linha customizada (1-99)', active=i_show_rsi_custom)
+i_rsi_custom_color = input.color(color.new(#ff9800, 0), 'Cor RSI Customizado', group=group_rsi, tooltip='Cor da linha RSI customizada', active=i_show_rsi_custom)
 i_rsi_max_deviation = input.float(0.30, 'Desvio Máximo (%)', minval=0.10, maxval=1.00, step=0.05, group=group_rsi, tooltip='Limite máximo de variação de preço para cálculos RSI (evita valores extremos)')
 
 i_table_show = input.bool(true, 'Exibir Tabela', group=group_table, tooltip='Ativa a tabela multi-timeframe com valores RSI e preços-alvo')
-i_rsi_tf1 = input.timeframe('5', 'TF 1', inline='rsi_tf1', group=group_table, tooltip='Timeframe 1 da tabela RSI')
-i_rsi_tf1_name = input.string('5m', '', inline='rsi_tf1', group=group_table, tooltip='Nome exibido na tabela')
-i_rsi_tf2 = input.timeframe('15', 'TF 2', inline='rsi_tf2', group=group_table, tooltip='Timeframe 2 da tabela RSI')
-i_rsi_tf2_name = input.string('15m', '', inline='rsi_tf2', group=group_table, tooltip='Nome exibido na tabela')
-i_rsi_tf3 = input.timeframe('60', 'TF 3', inline='rsi_tf3', group=group_table, tooltip='Timeframe 3 da tabela RSI')
-i_rsi_tf3_name = input.string('1h', '', inline='rsi_tf3', group=group_table, tooltip='Nome exibido na tabela')
-i_rsi_tf4 = input.timeframe('240', 'TF 4', inline='rsi_tf4', group=group_table, tooltip='Timeframe 4 da tabela RSI')
-i_rsi_tf4_name = input.string('4h', '', inline='rsi_tf4', group=group_table, tooltip='Nome exibido na tabela')
-i_rsi_tf5 = input.timeframe('D', 'TF 5', inline='rsi_tf5', group=group_table, tooltip='Timeframe 5 da tabela RSI')
-i_rsi_tf5_name = input.string('1D', '', inline='rsi_tf5', group=group_table, tooltip='Nome exibido na tabela')
+i_rsi_tf1 = input.timeframe('5', 'TF 1', inline='rsi_tf1', group=group_table, tooltip='Timeframe 1 da tabela RSI', active=i_table_show)
+i_rsi_tf1_name = input.string('5m', '', inline='rsi_tf1', group=group_table, tooltip='Nome exibido na tabela', active=i_table_show)
+i_rsi_tf2 = input.timeframe('15', 'TF 2', inline='rsi_tf2', group=group_table, tooltip='Timeframe 2 da tabela RSI', active=i_table_show)
+i_rsi_tf2_name = input.string('15m', '', inline='rsi_tf2', group=group_table, tooltip='Nome exibido na tabela', active=i_table_show)
+i_rsi_tf3 = input.timeframe('60', 'TF 3', inline='rsi_tf3', group=group_table, tooltip='Timeframe 3 da tabela RSI', active=i_table_show)
+i_rsi_tf3_name = input.string('1h', '', inline='rsi_tf3', group=group_table, tooltip='Nome exibido na tabela', active=i_table_show)
+i_rsi_tf4 = input.timeframe('240', 'TF 4', inline='rsi_tf4', group=group_table, tooltip='Timeframe 4 da tabela RSI', active=i_table_show)
+i_rsi_tf4_name = input.string('4h', '', inline='rsi_tf4', group=group_table, tooltip='Nome exibido na tabela', active=i_table_show)
+i_rsi_tf5 = input.timeframe('D', 'TF 5', inline='rsi_tf5', group=group_table, tooltip='Timeframe 5 da tabela RSI', active=i_table_show)
+i_rsi_tf5_name = input.string('1D', '', inline='rsi_tf5', group=group_table, tooltip='Nome exibido na tabela', active=i_table_show)
 i_table_show_col1 = input.bool(false, 'Exibir Coluna 1', inline='col1', group=group_table, tooltip='Ativa/desativa a coluna de preço para o nível RSI 1')
-i_table_col1_level = input.float(30, '', minval=1, maxval=99, step=1, inline='col1', group=group_table, tooltip='Nível RSI para calcular preço')
+i_table_col1_level = input.float(30, '', minval=1, maxval=99, step=1, inline='col1', group=group_table, tooltip='Nível RSI para calcular preço', active=i_table_show_col1)
 i_table_show_col2 = input.bool(false, 'Exibir Coluna 2', inline='col2', group=group_table, tooltip='Ativa/desativa a coluna de preço para o nível RSI 2')
-i_table_col2_level = input.float(70, '', minval=1, maxval=99, step=1, inline='col2', group=group_table, tooltip='Nível RSI para calcular preço')
-i_table_position = input.string('top_right', 'Posição', options=['top_right', 'top_left', 'bottom_right', 'bottom_left'], group=group_table, tooltip='Posição da tabela RSI no gráfico')
+i_table_col2_level = input.float(70, '', minval=1, maxval=99, step=1, inline='col2', group=group_table, tooltip='Nível RSI para calcular preço', active=i_table_show_col2)
+i_table_position = input.string('top_right', 'Posição', options=['top_right', 'top_left', 'bottom_right', 'bottom_left'], group=group_table, tooltip='Posição da tabela RSI no gráfico', active=i_table_show)
 
 i_fvg_enabled = input.bool(true, '⚡ Ativar FVG', group=group_fvg, tooltip='Ativa detecção e exibição de Fair Value Gaps no gráfico principal')
-i_fvg_auto_threshold = input.bool(false, 'Threshold ATR Auto', group=group_fvg, tooltip='Quando ativo, usa ATR para calcular automaticamente o limiar mínimo de FVG')
-i_fvg_threshold = input.float(0.3, 'Limiar (%)', minval=0.01, maxval=10, step=0.05, group=group_fvg, tooltip='Tamanho mínimo do gap em % para ser considerado FVG')
-i_fvg_adaptive_tf = input.bool(true, 'Adaptativo TF', group=group_fvg, tooltip='Multiplica o limiar baseado no timeframe')
-i_fvg_max_multiplier = input.float(5.0, 'Mult. Máximo', minval=1.0, maxval=20.0, step=0.5, group=group_fvg, tooltip='Limite máximo do multiplicador adaptativo por timeframe')
-i_fvg_timeframe = input.timeframe('', 'Timeframe', group=group_fvg, tooltip='Timeframe para detecção de FVG (vazio = TF atual)')
-i_fvg_extend_bars = input.int(15, 'Extensão Temporal', minval=5, maxval=200, group=group_fvg, tooltip='Quantidade de períodos do timeframe do FVG usada para projetar a caixa no eixo do tempo. Em mercados com gaps, a projeção é temporal e não representa contagem exata de candles negociados.')
-i_fvg_max_count = input.int(8, 'Máximo FVGs', minval=1, maxval=50, group=group_fvg, tooltip='Número máximo de FVGs ativos simultaneamente')
-i_fvg_max_age = input.int(300, 'Idade Máx', minval=50, maxval=1000, group=group_fvg, tooltip='Remove FVGs não mitigados após esta quantidade de barras')
-i_fvg_bull_color = input.color(color.new(#089981, 85), 'Cor Alta', group=group_fvg, tooltip='Cor das caixas FVG bullish')
-i_fvg_bear_color = input.color(color.new(#f23645, 85), 'Cor Baixa', group=group_fvg, tooltip='Cor das caixas FVG bearish')
-i_fvg_mitigation_type = input.string('50% (Meio)', 'Mitigação', options=['50% (Meio)', '100% (Completo)', '25% (Conservador)'], group=group_fvg, tooltip='Define quando um FVG é considerado mitigado')
-i_fvg_debug = input.bool(false, 'Debug Mode', group=group_fvg, tooltip='Exibe tabela de debug com informações técnicas sobre os FVGs')
-i_atr_period = input.int(14, 'ATR Período', minval=5, maxval=50, group=group_fvg, tooltip='Período do ATR usado no threshold automático de FVG')
+i_fvg_auto_threshold = input.bool(false, 'Threshold ATR Auto', group=group_fvg, tooltip='Quando ativo, usa ATR para calcular automaticamente o limiar mínimo de FVG', active=i_fvg_enabled)
+i_fvg_threshold = input.float(0.3, 'Limiar (%)', minval=0.01, maxval=10, step=0.05, group=group_fvg, tooltip='Tamanho mínimo do gap em % para ser considerado FVG', active=i_fvg_enabled)
+i_fvg_adaptive_tf = input.bool(true, 'Adaptativo TF', group=group_fvg, tooltip='Multiplica o limiar baseado no timeframe', active=i_fvg_enabled)
+i_fvg_max_multiplier = input.float(5.0, 'Mult. Máximo', minval=1.0, maxval=20.0, step=0.5, group=group_fvg, tooltip='Limite máximo do multiplicador adaptativo por timeframe', active=i_fvg_enabled)
+i_fvg_timeframe = input.timeframe('', 'Timeframe', group=group_fvg, tooltip='Timeframe para detecção de FVG (vazio = TF atual). Apenas TF igual ou maior que o gráfico atual é suportado neste modo.', active=i_fvg_enabled)
+i_fvg_extend_bars = input.int(15, 'Extensão Temporal', minval=5, maxval=200, group=group_fvg, tooltip='Quantidade de períodos do timeframe do FVG usada para projetar a caixa no eixo do tempo. Em mercados com gaps, a projeção é temporal e não representa contagem exata de candles negociados.', active=i_fvg_enabled)
+i_fvg_max_count = input.int(8, 'Máximo FVGs', minval=1, maxval=50, group=group_fvg, tooltip='Número máximo de FVGs ativos simultaneamente', active=i_fvg_enabled)
+i_fvg_max_age = input.int(300, 'Idade Máx', minval=50, maxval=1000, group=group_fvg, tooltip='Remove FVGs não mitigados após esta quantidade de barras do gráfico atual.', active=i_fvg_enabled)
+i_fvg_bull_color = input.color(color.new(#089981, 85), 'Cor Alta', group=group_fvg, tooltip='Cor das caixas FVG bullish', active=i_fvg_enabled)
+i_fvg_bear_color = input.color(color.new(#f23645, 85), 'Cor Baixa', group=group_fvg, tooltip='Cor das caixas FVG bearish', active=i_fvg_enabled)
+i_fvg_mitigation_type = input.string('50% (Meio)', 'Mitigação', options=['50% (Meio)', '100% (Completo)', '25% (Conservador)'], group=group_fvg, tooltip='Define quando um FVG é considerado mitigado', active=i_fvg_enabled)
+i_fvg_debug = input.bool(false, 'Debug Mode', group=group_fvg, tooltip='Exibe tabela de debug com informações técnicas sobre os FVGs', active=i_fvg_enabled)
+i_atr_period = input.int(14, 'ATR Período', minval=5, maxval=50, group=group_fvg, tooltip='Período do ATR usado no threshold automático de FVG', active=i_fvg_enabled)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🌐 VARIÁVEIS GLOBAIS
@@ -429,12 +472,10 @@ var color color_transparent = #ffffff00
 
 // RSI
 float RSI_ALPHA = 1.0 / i_rsi_length
-var array<string> g_rsi_tfs = array.from(i_rsi_tf1, i_rsi_tf2, i_rsi_tf3, i_rsi_tf4, i_rsi_tf5)
-var array<string> g_rsi_tfs_display = array.from(i_rsi_tf1_name, i_rsi_tf2_name, i_rsi_tf3_name, i_rsi_tf4_name, i_rsi_tf5_name)
-var float[] g_rsi_values = array.new_float(5, na)
-var float[] g_rsi_close = array.new_float(5, na)
-var float[] g_rsi_auc = array.new_float(5, na)
-var float[] g_rsi_adc = array.new_float(5, na)
+var float[] g_rsi_values = array.new_float(RSI_MTF_SLOT_COUNT, na)
+var float[] g_rsi_close = array.new_float(RSI_MTF_SLOT_COUNT, na)
+var float[] g_rsi_auc = array.new_float(RSI_MTF_SLOT_COUNT, na)
+var float[] g_rsi_adc = array.new_float(RSI_MTF_SLOT_COUNT, na)
 var float g_cached_rsi25 = na
 var float g_cached_rsi30 = na
 var float g_cached_rsi50 = na
@@ -444,10 +485,10 @@ var float g_cached_rsi_custom = na
 var int g_last_calc_bar = -1
 var table g_rsi_table = na
 var int g_prev_col_config = 0
+var string g_prev_table_position = ''
 
 // FVG Gráfico
 var array<FVG> g_active_fvgs = array.new<FVG>()
-var int g_prev_fvg_time = 0
 var int g_last_fvg_time = 0
 var array<int> g_fvg_to_remove = array.new<int>()
 var int g_tf_seconds = 0
@@ -486,24 +527,25 @@ f_valid_timeframe(string HTF) =>
         n2 = timeframe.in_seconds(HTF)
         n1 < n2 and n2 % n1 == 0
 
-f_remaining_time(string HTF, int openTime) =>
+f_remaining_time(string HTF) =>
     if barstate.islast
-        // [FIX] Cálculo matemático (evita request.security em bloco condicional)
-        int duration = timeframe.in_seconds(HTF) * 1000
-        int closeTime = openTime + duration
-        timeRemaining = math.max(0, (closeTime - timenow) / 1000)
-        days = math.floor(timeRemaining / SEC_1D)
-        hours = math.floor((timeRemaining - days * SEC_1D) / SEC_1H)
-        minutes = math.floor((timeRemaining - days * SEC_1D - hours * SEC_1H) / 60)
-        seconds = math.floor(timeRemaining - days * SEC_1D - hours * SEC_1H - minutes * 60)
-        r = str.tostring(seconds, '00')
-        if minutes > 0 or hours > 0 or days > 0
-            r := str.tostring(minutes, '00') + ':' + r
-        if hours > 0 or days > 0
-            r := str.tostring(hours, '00') + ':' + r
-        if days > 0
-            r := str.tostring(days) + 'D ' + r
-        r
+        int closeTime = time_close(HTF)
+        if na(closeTime)
+            '--:--'
+        else
+            timeRemaining = int(math.max(0, (closeTime - timenow) / 1000))
+            days = math.floor(timeRemaining / SEC_1D)
+            hours = math.floor((timeRemaining - days * SEC_1D) / SEC_1H)
+            minutes = math.floor((timeRemaining - days * SEC_1D - hours * SEC_1H) / 60)
+            seconds = math.floor(timeRemaining - days * SEC_1D - hours * SEC_1H - minutes * 60)
+            r = str.tostring(seconds, '00')
+            if minutes > 0 or hours > 0 or days > 0
+                r := str.tostring(minutes, '00') + ':' + r
+            if hours > 0 or days > 0
+                r := str.tostring(hours, '00') + ':' + r
+            if days > 0
+                r := str.tostring(days) + 'D ' + r
+            r
     else
         '--:--'
 
@@ -524,9 +566,71 @@ f_htf_enabled() =>
     enabled += htf2.settings.show ? 1 : 0
     enabled += htf3.settings.show ? 1 : 0
     enabled += htf4.settings.show ? 1 : 0
-    enabled += htf5.settings.show ? 1 : 0
-    enabled += htf6.settings.show ? 1 : 0
+    enabled += htf5_show ? 1 : 0
+    enabled += htf6_show ? 1 : 0
     math.min(enabled, settings.max_sets)
+
+f_can_render_htf(bool isEnabled, string HTF, int renderedCount, int renderedTotal) =>
+    isEnabled and f_valid_timeframe(HTF) and renderedCount < renderedTotal
+
+f_should_show_trace(int renderedCount, int renderedTotal) =>
+    settings.trace_anchor == 'First Timeframe' ? renderedCount == 0 : renderedTotal > 0 and renderedCount == renderedTotal - 1
+
+f_htf_group_span(CandleSet candleSet) =>
+    candleSet.candles.size() * settings.width + (candleSet.candles.size() > 0 ? (candleSet.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
+
+f_clear_trace_labels() =>
+    if not na(trace.o_l)
+        label.delete(trace.o_l)
+        trace.o_l := na
+    if not na(trace.c_l)
+        label.delete(trace.c_l)
+        trace.c_l := na
+    if not na(trace.h_l)
+        label.delete(trace.h_l)
+        trace.h_l := na
+    if not na(trace.l_l)
+        label.delete(trace.l_l)
+        trace.l_l := na
+
+f_clear_trace() =>
+    if not na(trace.o)
+        line.delete(trace.o)
+        trace.o := na
+    if not na(trace.c)
+        line.delete(trace.c)
+        trace.c := na
+    if not na(trace.h)
+        line.delete(trace.h)
+        trace.h := na
+    if not na(trace.l)
+        line.delete(trace.l)
+        trace.l := na
+    f_clear_trace_labels()
+
+f_sync_trace_line(line currentLine, int x1, int x2, float price, color lineColor, string lineStyle, int lineWidth) =>
+    line result = currentLine
+    if not na(result)
+        line.set_xy1(result, x1, price)
+        line.set_xy2(result, x2, price)
+        line.set_color(result, lineColor)
+        line.set_style(result, f_line_style(lineStyle))
+        line.set_width(result, lineWidth)
+    else
+        result := line.new(x1, price, x2, price, color=lineColor, style=f_line_style(lineStyle), width=lineWidth)
+    result
+
+f_sync_trace_label(label currentLabel, int x, float price, color textColor, string textSize) =>
+    string priceText = str.tostring(price, format.mintick)
+    label result = currentLabel
+    if not na(result)
+        label.set_xy(result, x, price)
+        label.set_text(result, priceText)
+        label.set_textcolor(result, textColor)
+        label.set_size(result, textSize)
+    else
+        result := label.new(x, price, priceText, color=color_transparent, textcolor=textColor, style=label.style_label_left, size=textSize)
+    result
 
 f_candle_set_high(array<Candle> candles, float h) =>
     float _h = h
@@ -548,17 +652,17 @@ f_candles_high() =>
     h = 0.0
     int cnt = 0
     int last = f_htf_enabled()
-    if htf1.settings.show and f_valid_timeframe(htf1.settings.htf)
+    if f_can_render_htf(htf1.settings.show, htf1.settings.htf, cnt, last)
         h := f_candle_set_high(htf1.candles, h), cnt += 1
-    if htf2.settings.show and f_valid_timeframe(htf2.settings.htf) and cnt < last
+    if f_can_render_htf(htf2.settings.show, htf2.settings.htf, cnt, last)
         h := f_candle_set_high(htf2.candles, h), cnt += 1
-    if htf3.settings.show and f_valid_timeframe(htf3.settings.htf) and cnt < last
+    if f_can_render_htf(htf3.settings.show, htf3.settings.htf, cnt, last)
         h := f_candle_set_high(htf3.candles, h), cnt += 1
-    if htf4.settings.show and f_valid_timeframe(htf4.settings.htf) and cnt < last
+    if f_can_render_htf(htf4.settings.show, htf4.settings.htf, cnt, last)
         h := f_candle_set_high(htf4.candles, h), cnt += 1
-    if htf5.settings.show and f_valid_timeframe(htf5.settings.htf) and cnt < last
+    if f_can_render_htf(htf5_show, htf5.settings.htf, cnt, last)
         h := f_candle_set_high(htf5.candles, h), cnt += 1
-    if htf6.settings.show and f_valid_timeframe(htf6.settings.htf) and cnt < last
+    if f_can_render_htf(htf6_show, htf6.settings.htf, cnt, last)
         h := f_candle_set_high(htf6.candles, h)
     h
 
@@ -566,17 +670,17 @@ f_candles_low(float h) =>
     l = h
     int cnt = 0
     int last = f_htf_enabled()
-    if htf1.settings.show and f_valid_timeframe(htf1.settings.htf)
+    if f_can_render_htf(htf1.settings.show, htf1.settings.htf, cnt, last)
         l := f_candle_set_low(htf1.candles, l), cnt += 1
-    if htf2.settings.show and f_valid_timeframe(htf2.settings.htf) and cnt < last
+    if f_can_render_htf(htf2.settings.show, htf2.settings.htf, cnt, last)
         l := f_candle_set_low(htf2.candles, l), cnt += 1
-    if htf3.settings.show and f_valid_timeframe(htf3.settings.htf) and cnt < last
+    if f_can_render_htf(htf3.settings.show, htf3.settings.htf, cnt, last)
         l := f_candle_set_low(htf3.candles, l), cnt += 1
-    if htf4.settings.show and f_valid_timeframe(htf4.settings.htf) and cnt < last
+    if f_can_render_htf(htf4.settings.show, htf4.settings.htf, cnt, last)
         l := f_candle_set_low(htf4.candles, l), cnt += 1
-    if htf5.settings.show and f_valid_timeframe(htf5.settings.htf) and cnt < last
+    if f_can_render_htf(htf5_show, htf5.settings.htf, cnt, last)
         l := f_candle_set_low(htf5.candles, l), cnt += 1
-    if htf6.settings.show and f_valid_timeframe(htf6.settings.htf) and cnt < last
+    if f_can_render_htf(htf6_show, htf6.settings.htf, cnt, last)
         l := f_candle_set_low(htf6.candles, l)
     l
 
@@ -631,6 +735,43 @@ f_rsi_calc_price(float target_rsi, float close_val, float auc_val, float adc_val
 f_rsi_pack() =>
     emaLen = f_rsi_ema_length()
     [close, ta.rsi(close, i_rsi_length), ta.ema(math.max(close - close[1], 0), emaLen), ta.ema(math.max(close[1] - close, 0), emaLen)]
+
+f_rsi_pack_confirmed() =>
+    emaLen = f_rsi_ema_length()
+    [close[1], ta.rsi(close, i_rsi_length)[1], ta.ema(math.max(close - close[1], 0), emaLen)[1], ta.ema(math.max(close[1] - close, 0), emaLen)[1]]
+
+f_rsi_tf_display(int index) =>
+    switch index
+        0 => i_rsi_tf1_name
+        1 => i_rsi_tf2_name
+        2 => i_rsi_tf3_name
+        3 => i_rsi_tf4_name
+        => i_rsi_tf5_name
+
+f_request_rsi_pack(string targetTf, bool useConfirmedHtfSecurity, int chartTfSeconds, int calcBarsCount) =>
+    int targetTfSeconds = timeframe.in_seconds(targetTf)
+    bool useLocal = targetTfSeconds == chartTfSeconds
+    bool useConfirmed = useConfirmedHtfSecurity and targetTfSeconds > chartTfSeconds
+    [localClose, localRsi, localAuc, localAdc] = f_rsi_pack()
+    [confirmedClose, confirmedRsi, confirmedAuc, confirmedAdc] = request.security(syminfo.tickerid, targetTf, f_rsi_pack_confirmed(), lookahead=barmerge.lookahead_on, gaps=barmerge.gaps_off, calc_bars_count=calcBarsCount)
+    [realtimeClose, realtimeRsi, realtimeAuc, realtimeAdc] = request.security(syminfo.tickerid, targetTf, f_rsi_pack(), lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off, calc_bars_count=calcBarsCount)
+    if useLocal
+        [localClose, localRsi, localAuc, localAdc]
+    else if useConfirmed
+        [confirmedClose, confirmedRsi, confirmedAuc, confirmedAdc]
+    else
+        [realtimeClose, realtimeRsi, realtimeAuc, realtimeAdc]
+
+f_table_seed_cells(table tbl, int cols, int rows) =>
+    for row = 0 to rows - 1
+        for col = 0 to cols - 1
+            table.cell(tbl, col, row, '', text_color=color.new(#f8f8f2, 0), bgcolor=color.new(#282a36, 0), text_size=size.small)
+
+f_table_set_cell(table tbl, int col, int row, string txt, color bg, color txtClr, string txtSize) =>
+    table.cell_set_text(tbl, col, row, txt)
+    table.cell_set_bgcolor(tbl, col, row, bg)
+    table.cell_set_text_color(tbl, col, row, txtClr)
+    table.cell_set_text_size(tbl, col, row, txtSize)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔧 FUNÇÕES FVG GRÁFICO
@@ -707,10 +848,48 @@ f_fvg_detect() =>
     FVG newFvg = isBullFvg and hasEnoughBars ? FVG.new(low, high[2], true, time[2], bar_index - 2, na, na, true) : isBearFvg and hasEnoughBars ? FVG.new(low[2], high, false, time[2], bar_index - 2, na, na, true) : FVG.new(na, na, false, 0, -1, na, na, false)
     [isBullFvg, isBearFvg, newFvg, threshold, atr_value]
 
+f_fvg_detect_confirmed() =>
+    float atr_value = i_fvg_auto_threshold or i_fvg_debug ? ta.atr(i_atr_period)[1] : na
+    float threshold = na
+    float bullGapSize = na
+    float bearGapSize = na
+    if i_fvg_auto_threshold
+        float atr_safe = math.max(atr_value, syminfo.mintick)
+        threshold := 1.0
+        if i_fvg_adaptive_tf
+            threshold := threshold * f_fvg_get_tf_multiplier(g_tf_seconds)
+        bullGapSize := (low[1] - high[3]) / atr_safe
+        bearGapSize := (low[3] - high[1]) / atr_safe
+    else
+        threshold := i_fvg_threshold / 100.0
+        if i_fvg_adaptive_tf
+            threshold := threshold * f_fvg_get_tf_multiplier(g_tf_seconds)
+        bullGapSize := (low[1] - high[3]) / math.max(high[3], syminfo.mintick)
+        bearGapSize := (low[3] - high[1]) / math.max(low[3], syminfo.mintick)
+    isBullFvg = low[1] > high[3] and bullGapSize > threshold
+    isBearFvg = high[1] < low[3] and bearGapSize > threshold
+    bool hasEnoughBars = bar_index >= 3 and not na(time[3])
+    FVG newFvg = isBullFvg and hasEnoughBars ? FVG.new(low[1], high[3], true, time[3], -1, na, na, true) : isBearFvg and hasEnoughBars ? FVG.new(low[3], high[1], false, time[3], -1, na, na, true) : FVG.new(na, na, false, 0, -1, na, na, false)
+    [isBullFvg, isBearFvg, newFvg, threshold, atr_value]
+
+f_request_fvg_detection(string targetTf, bool useConfirmedHtfSecurity, int chartTfSeconds, int calcBarsCount) =>
+    int targetTfSeconds = timeframe.in_seconds(targetTf)
+    bool useLocal = targetTfSeconds == chartTfSeconds
+    bool useConfirmed = useConfirmedHtfSecurity and targetTfSeconds > chartTfSeconds
+    [localBull, localBear, localFvg, localThreshold, localAtr] = f_fvg_detect()
+    [confirmedBull, confirmedBear, confirmedFvg, confirmedThreshold, confirmedAtr] = request.security(syminfo.tickerid, targetTf, f_fvg_detect_confirmed(), lookahead=barmerge.lookahead_on, gaps=barmerge.gaps_off, calc_bars_count=calcBarsCount)
+    [realtimeBull, realtimeBear, realtimeFvg, realtimeThreshold, realtimeAtr] = request.security(syminfo.tickerid, targetTf, f_fvg_detect(), lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off, calc_bars_count=calcBarsCount)
+    if useLocal
+        [localBull, localBear, localFvg, localThreshold, localAtr]
+    else if useConfirmed
+        [confirmedBull, confirmedBear, confirmedFvg, confirmedThreshold, confirmedAtr]
+    else
+        [realtimeBull, realtimeBear, realtimeFvg, realtimeThreshold, realtimeAtr]
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 🧱 MÉTODOS CANDLESET
 // ═══════════════════════════════════════════════════════════════════════════
-method UpdateTime(CandleSet candleSet, int offset) =>
+method UpdateTime(CandleSet candleSet) =>
     if candleSet.candles.size() > 0
         Candle candle = candleSet.candles.get(0)
         candle.c := close
@@ -721,6 +900,89 @@ method UpdateTime(CandleSet candleSet, int offset) =>
         if low < candle.l
             candle.l := low
             candle.l_idx := bar_index
+    candleSet
+
+method ClearTopHtfLabels(CandleSet candleSet) =>
+    if not na(candleSet.tfNameTop)
+        candleSet.tfNameTop.delete()
+        candleSet.tfNameTop := na
+    if not na(candleSet.tfTimerTop)
+        candleSet.tfTimerTop.delete()
+        candleSet.tfTimerTop := na
+    candleSet
+
+method ClearBottomHtfLabels(CandleSet candleSet) =>
+    if not na(candleSet.tfNameBottom)
+        candleSet.tfNameBottom.delete()
+        candleSet.tfNameBottom := na
+    if not na(candleSet.tfTimerBottom)
+        candleSet.tfTimerBottom.delete()
+        candleSet.tfTimerBottom := na
+    candleSet
+
+method ClearHtfLabels(CandleSet candleSet) =>
+    candleSet.ClearTopHtfLabels()
+    candleSet.ClearBottomHtfLabels()
+    candleSet
+
+method SyncHtfLabels(CandleSet candleSet, int left, float top, float bottom) =>
+    bool hasCandles = candleSet.candles.size() > 0
+    if not settings.htf_label_show or not hasCandles
+        candleSet.ClearHtfLabels()
+    else
+        string labelText = f_htf_name(candleSet.settings.htf)
+        string labelTextTop = labelText
+        string labelTextBottom = labelText
+        if settings.htf_timer_show
+            labelTextTop += '\n'
+            labelTextBottom := '\n' + labelTextBottom
+        if settings.daily_name
+            labelTextTop += '\n'
+        string timerText = '(' + f_remaining_time(candleSet.settings.htf) + ')' + (settings.daily_name ? '\n' : '')
+        bool showTop = settings.label_position == 'Both' or settings.label_position == 'Top'
+        bool showBottom = settings.label_position == 'Both' or settings.label_position == 'Bottom'
+        if showTop
+            if not na(candleSet.tfNameTop)
+                candleSet.tfNameTop.set_xy(left, top)
+                candleSet.tfNameTop.set_text(labelTextTop)
+                candleSet.tfNameTop.set_textcolor(settings.htf_label_color)
+                candleSet.tfNameTop.set_size(settings.htf_label_size)
+            else
+                candleSet.tfNameTop := label.new(left, top, labelTextTop, color=color_transparent, textcolor=settings.htf_label_color, style=label.style_label_down, size=settings.htf_label_size)
+            if settings.htf_timer_show
+                if not na(candleSet.tfTimerTop)
+                    candleSet.tfTimerTop.set_xy(left, top)
+                    candleSet.tfTimerTop.set_text(timerText)
+                    candleSet.tfTimerTop.set_textcolor(settings.htf_timer_color)
+                    candleSet.tfTimerTop.set_size(settings.htf_timer_size)
+                else
+                    candleSet.tfTimerTop := label.new(left, top, timerText, color=color_transparent, textcolor=settings.htf_timer_color, style=label.style_label_down, size=settings.htf_timer_size)
+            else if not na(candleSet.tfTimerTop)
+                candleSet.tfTimerTop.delete()
+                candleSet.tfTimerTop := na
+        else
+            candleSet.ClearTopHtfLabels()
+        if showBottom
+            if not na(candleSet.tfNameBottom)
+                candleSet.tfNameBottom.set_xy(left, bottom)
+                candleSet.tfNameBottom.set_text(labelTextBottom)
+                candleSet.tfNameBottom.set_textcolor(settings.htf_label_color)
+                candleSet.tfNameBottom.set_size(settings.htf_label_size)
+            else
+                candleSet.tfNameBottom := label.new(left, bottom, labelTextBottom, color=color_transparent, textcolor=settings.htf_label_color, style=label.style_label_up, size=settings.htf_label_size)
+            if settings.htf_timer_show
+                if not na(candleSet.tfTimerBottom)
+                    candleSet.tfTimerBottom.set_xy(left, bottom)
+                    candleSet.tfTimerBottom.set_text(timerText)
+                    candleSet.tfTimerBottom.set_textcolor(settings.htf_timer_color)
+                    candleSet.tfTimerBottom.set_size(settings.htf_timer_size)
+                else
+                    candleSet.tfTimerBottom := label.new(left, bottom, timerText, color=color_transparent, textcolor=settings.htf_timer_color, style=label.style_label_up, size=settings.htf_timer_size)
+            else if not na(candleSet.tfTimerBottom)
+                candleSet.tfTimerBottom.delete()
+                candleSet.tfTimerBottom := na
+        else
+            candleSet.ClearBottomHtfLabels()
     candleSet
 
 method Reorder(CandleSet candleSet, int offset) =>
@@ -739,8 +1001,14 @@ method Reorder(CandleSet candleSet, int offset) =>
                 if not na(candle.dow_label)
                     candle.dow_label.set_y(candle.h)
                     candle.dow_label.set_x(bar_index + settings.width / 2 + t_buffer)
+                    candle.dow_label.set_text(candle.dow)
+                    candle.dow_label.set_textcolor(settings.dow_color)
+                    candle.dow_label.set_size(settings.dow_size)
                 else
                     candle.dow_label := label.new(bar_index + settings.width / 2 + t_buffer, candle.h, candle.dow, color=color_transparent, textcolor=settings.dow_color, style=label.style_label_down, size=settings.dow_size)
+            else if not na(candle.dow_label)
+                candle.dow_label.delete()
+                candle.dow_label := na
     top = 0.0
     bottom = 0.0
     if settings.label_alignment == 'Align'
@@ -749,41 +1017,10 @@ method Reorder(CandleSet candleSet, int offset) =>
     if settings.label_alignment == 'Follow Candles'
         top := f_candle_set_high(candleSet.candles, 0)
         bottom := f_candle_set_low(candleSet.candles, top)
-    left = bar_index + offset + (settings.width + settings.buffer) * (size - 1) / 2
-    if settings.htf_label_show
-        string lblt = f_htf_name(candleSet.settings.htf)
-        string lbll = lblt
-        if settings.htf_timer_show
-            lblt := lblt + '\n'
-            lbll := '\n' + lbll
-        if settings.daily_name
-            lblt := lblt + '\n'
-        int currentOpenTime = 0
-        if candleSet.candles.size() > 0
-            currentOpenTime := candleSet.candles.get(0).o_time
-        string tmr = '(' + f_remaining_time(candleSet.settings.htf, currentOpenTime) + ')' + (settings.daily_name ? '\n' : '')
-        if settings.label_position == 'Both' or settings.label_position == 'Top'
-            if not na(candleSet.tfNameTop)
-                candleSet.tfNameTop.set_xy(left, top)
-            else
-                candleSet.tfNameTop := label.new(left, top, lblt, color=color_transparent, textcolor=settings.htf_label_color, style=label.style_label_down, size=settings.htf_label_size)
-            if settings.htf_timer_show
-                if not na(candleSet.tfTimerTop)
-                    candleSet.tfTimerTop.set_xy(left, top)
-                    candleSet.tfTimerTop.set_text(tmr)
-                else
-                    candleSet.tfTimerTop := label.new(left, top, tmr, color=color_transparent, textcolor=settings.htf_timer_color, style=label.style_label_down, size=settings.htf_timer_size)
-        if settings.label_position == 'Both' or settings.label_position == 'Bottom'
-            if not na(candleSet.tfNameBottom)
-                candleSet.tfNameBottom.set_xy(left, bottom)
-            else
-                candleSet.tfNameBottom := label.new(left, bottom, lbll, color=color_transparent, textcolor=settings.htf_label_color, style=label.style_label_up, size=settings.htf_label_size)
-            if settings.htf_timer_show
-                if not na(candleSet.tfTimerBottom)
-                    candleSet.tfTimerBottom.set_xy(left, bottom)
-                    candleSet.tfTimerBottom.set_text(tmr)
-                else
-                    candleSet.tfTimerBottom := label.new(left, bottom, tmr, color=color_transparent, textcolor=settings.htf_timer_color, style=label.style_label_up, size=settings.htf_timer_size)
+    int left = bar_index + offset
+    if size > 0
+        left := bar_index + offset + (settings.width + settings.buffer) * (size - 1) / 2
+    candleSet.SyncHtfLabels(left, top, bottom)
     if candleSet.imbalances.size() > 0
         for i = 0 to candleSet.imbalances.size() - 1
             Imbalance imb = candleSet.imbalances.get(i)
@@ -810,43 +1047,18 @@ method Update(CandleSet candleSet, int offset, bool showTrace) =>
         line.set_color(candle.wick_down, bull ? settings.bull_wick : settings.bear_wick)
         if showTrace and settings.trace_show
             t_buffer = offset + (settings.width + settings.buffer) * (candleSet.candles.size() - 1)
-            if not na(trace.o)
-                line.set_xy1(trace.o, bar_index, candle.o), line.set_xy2(trace.o, bar_index + t_buffer, candle.o)
-            else
-                trace.o := line.new(bar_index, candle.o, bar_index + t_buffer, candle.o, color=settings.trace_o_color, style=f_line_style(settings.trace_o_style), width=settings.trace_o_size)
-            if not na(trace.c)
-                line.set_xy1(trace.c, bar_index, candle.c), line.set_xy2(trace.c, bar_index + t_buffer, candle.c)
-            else
-                trace.c := line.new(bar_index, candle.c, bar_index + t_buffer, candle.c, color=settings.trace_c_color, style=f_line_style(settings.trace_c_style), width=settings.trace_c_size)
-            if not na(trace.h)
-                line.set_xy1(trace.h, bar_index, candle.h), line.set_xy2(trace.h, bar_index + t_buffer, candle.h)
-            else
-                trace.h := line.new(bar_index, candle.h, bar_index + t_buffer, candle.h, color=settings.trace_h_color, style=f_line_style(settings.trace_h_style), width=settings.trace_h_size)
-            if not na(trace.l)
-                line.set_xy1(trace.l, bar_index, candle.l), line.set_xy2(trace.l, bar_index + t_buffer, candle.l)
-            else
-                trace.l := line.new(bar_index, candle.l, bar_index + t_buffer, candle.l, color=settings.trace_l_color, style=f_line_style(settings.trace_l_style), width=settings.trace_l_size)
+            int x1 = bar_index
+            int x2 = bar_index + t_buffer
+            trace.o := f_sync_trace_line(trace.o, x1, x2, candle.o, settings.trace_o_color, settings.trace_o_style, settings.trace_o_size)
+            trace.c := f_sync_trace_line(trace.c, x1, x2, candle.c, settings.trace_c_color, settings.trace_c_style, settings.trace_c_size)
+            trace.h := f_sync_trace_line(trace.h, x1, x2, candle.h, settings.trace_h_color, settings.trace_h_style, settings.trace_h_size)
+            trace.l := f_sync_trace_line(trace.l, x1, x2, candle.l, settings.trace_l_color, settings.trace_l_style, settings.trace_l_size)
             if settings.label_show
-                if not na(trace.o_l)
-                    label.set_xy(trace.o_l, bar_index + t_buffer + settings.width, candle.o)
-                    label.set_text(trace.o_l, str.tostring(candle.o, format.mintick))
-                else
-                    trace.o_l := label.new(bar_index + t_buffer + settings.width, candle.o, str.tostring(candle.o, format.mintick), color=color_transparent, textcolor=settings.label_color, style=label.style_label_left, size=settings.label_size)
-                if not na(trace.c_l)
-                    label.set_xy(trace.c_l, bar_index + t_buffer + settings.width, candle.c)
-                    label.set_text(trace.c_l, str.tostring(candle.c, format.mintick))
-                else
-                    trace.c_l := label.new(bar_index + t_buffer + settings.width, candle.c, str.tostring(candle.c, format.mintick), color=color_transparent, textcolor=settings.label_color, style=label.style_label_left, size=settings.label_size)
-                if not na(trace.h_l)
-                    label.set_xy(trace.h_l, bar_index + t_buffer + settings.width, candle.h)
-                    label.set_text(trace.h_l, str.tostring(candle.h, format.mintick))
-                else
-                    trace.h_l := label.new(bar_index + t_buffer + settings.width, candle.h, str.tostring(candle.h, format.mintick), color=color_transparent, textcolor=settings.label_color, style=label.style_label_left, size=settings.label_size)
-                if not na(trace.l_l)
-                    label.set_xy(trace.l_l, bar_index + t_buffer + settings.width, candle.l)
-                    label.set_text(trace.l_l, str.tostring(candle.l, format.mintick))
-                else
-                    trace.l_l := label.new(bar_index + t_buffer + settings.width, candle.l, str.tostring(candle.l, format.mintick), color=color_transparent, textcolor=settings.label_color, style=label.style_label_left, size=settings.label_size)
+                int labelX = bar_index + t_buffer + settings.width
+                trace.o_l := f_sync_trace_label(trace.o_l, labelX, candle.o, settings.label_color, settings.label_size)
+                trace.c_l := f_sync_trace_label(trace.c_l, labelX, candle.c, settings.label_color, settings.label_size)
+                trace.h_l := f_sync_trace_label(trace.h_l, labelX, candle.h, settings.label_color, settings.label_size)
+                trace.l_l := f_sync_trace_label(trace.l_l, labelX, candle.l, settings.label_color, settings.label_size)
     candleSet
 
 method FindImbalance(CandleSet candleSet) =>
@@ -931,6 +1143,15 @@ method Monitor(CandleSet candleSet, bool isNewHTFCandle) =>
                 delCandle.dow_label.delete()
     candleSet
 
+f_process_htf(CandleSet candleSet, bool isNewHTFCandle, int renderedCount, int renderedTotal, int offset) =>
+    bool showTrace = f_should_show_trace(renderedCount, renderedTotal)
+    CandleSet workingSet = candleSet
+    workingSet := workingSet.Monitor(isNewHTFCandle)
+    workingSet := workingSet.UpdateTime()
+    workingSet := workingSet.Update(offset, showTrace)
+    workingSet := workingSet.FindImbalance()
+    [renderedCount + 1, offset + f_htf_group_span(workingSet)]
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 📊 CÁLCULOS & REQUEST.SECURITY
 // ═══════════════════════════════════════════════════════════════════════════
@@ -940,35 +1161,66 @@ rsiEmaLength = f_rsi_ema_length()
 rsi_current = ta.rsi(close, i_rsi_length)
 auc_current = ta.ema(math.max(close - close[1], 0), rsiEmaLength)
 adc_current = ta.ema(math.max(close[1] - close, 0), rsiEmaLength)
+bool useConfirmedHtfSecurity = i_htf_security_mode == 'Confirmado'
+int rsiCalcBarsCount = math.max(RSI_REQUEST_MIN_BARS, i_rsi_length * 6)
+bool hasCustomFvgTf = i_fvg_timeframe != ''
+int chartTfSeconds = timeframe.in_seconds()
+int fvgTfSeconds = hasCustomFvgTf ? timeframe.in_seconds(i_fvg_timeframe) : chartTfSeconds
+bool fvgTfIsLower = hasCustomFvgTf and fvgTfSeconds < chartTfSeconds
+int fvgCalcBarsCount = math.max(FVG_REQUEST_MIN_BARS, i_atr_period + 10)
 
-// [FIX v1.2.0] request.security desenrolado — Pine v6 proíbe dentro de loops
-[c1, r1, au1, ad1] = request.security(syminfo.tickerid, i_rsi_tf1, f_rsi_pack(), lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
-[c2, r2, au2, ad2] = request.security(syminfo.tickerid, i_rsi_tf2, f_rsi_pack(), lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
-[c3, r3, au3, ad3] = request.security(syminfo.tickerid, i_rsi_tf3, f_rsi_pack(), lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
-[c4, r4, au4, ad4] = request.security(syminfo.tickerid, i_rsi_tf4, f_rsi_pack(), lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
-[c5, r5, au5, ad5] = request.security(syminfo.tickerid, i_rsi_tf5, f_rsi_pack(), lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
+if i_fvg_enabled and fvgTfIsLower and barstate.isfirst
+    runtime.error('O timeframe do FVG deve ser igual ou maior que o timeframe do gráfico atual. Para LTF, use request.security_lower_tf em uma implementação dedicada.')
 
-g_rsi_close.set(0, c1), g_rsi_values.set(0, r1), g_rsi_auc.set(0, au1), g_rsi_adc.set(0, ad1)
-g_rsi_close.set(1, c2), g_rsi_values.set(1, r2), g_rsi_auc.set(1, au2), g_rsi_adc.set(1, ad2)
-g_rsi_close.set(2, c3), g_rsi_values.set(2, r3), g_rsi_auc.set(2, au3), g_rsi_adc.set(2, ad3)
-g_rsi_close.set(3, c4), g_rsi_values.set(3, r4), g_rsi_auc.set(3, au4), g_rsi_adc.set(3, ad4)
-g_rsi_close.set(4, c5), g_rsi_values.set(4, r5), g_rsi_auc.set(4, au5), g_rsi_adc.set(4, ad5)
+// Pine exige chamadas consistentes nesse bloco. Aqui deixamos as 5 leituras explícitas.
+[closeVal1, rsiVal1, aucVal1, adcVal1] = f_request_rsi_pack(i_rsi_tf1, useConfirmedHtfSecurity, chartTfSeconds, rsiCalcBarsCount)
+g_rsi_close.set(0, closeVal1)
+g_rsi_values.set(0, rsiVal1)
+g_rsi_auc.set(0, aucVal1)
+g_rsi_adc.set(0, adcVal1)
 
-tfFinal = i_fvg_timeframe == '' ? timeframe.period : i_fvg_timeframe
-g_tf_seconds := timeframe.in_seconds(tfFinal)
-[isBull, isBear, detectedFvg, thresholdUsed, atrValue] = request.security(syminfo.tickerid, tfFinal, f_fvg_detect(), lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
+[closeVal2, rsiVal2, aucVal2, adcVal2] = f_request_rsi_pack(i_rsi_tf2, useConfirmedHtfSecurity, chartTfSeconds, rsiCalcBarsCount)
+g_rsi_close.set(1, closeVal2)
+g_rsi_values.set(1, rsiVal2)
+g_rsi_auc.set(1, aucVal2)
+g_rsi_adc.set(1, adcVal2)
+
+[closeVal3, rsiVal3, aucVal3, adcVal3] = f_request_rsi_pack(i_rsi_tf3, useConfirmedHtfSecurity, chartTfSeconds, rsiCalcBarsCount)
+g_rsi_close.set(2, closeVal3)
+g_rsi_values.set(2, rsiVal3)
+g_rsi_auc.set(2, aucVal3)
+g_rsi_adc.set(2, adcVal3)
+
+[closeVal4, rsiVal4, aucVal4, adcVal4] = f_request_rsi_pack(i_rsi_tf4, useConfirmedHtfSecurity, chartTfSeconds, rsiCalcBarsCount)
+g_rsi_close.set(3, closeVal4)
+g_rsi_values.set(3, rsiVal4)
+g_rsi_auc.set(3, aucVal4)
+g_rsi_adc.set(3, adcVal4)
+
+[closeVal5, rsiVal5, aucVal5, adcVal5] = f_request_rsi_pack(i_rsi_tf5, useConfirmedHtfSecurity, chartTfSeconds, rsiCalcBarsCount)
+g_rsi_close.set(4, closeVal5)
+g_rsi_values.set(4, rsiVal5)
+g_rsi_auc.set(4, aucVal5)
+g_rsi_adc.set(4, adcVal5)
+
+tfFinal = hasCustomFvgTf ? i_fvg_timeframe : timeframe.period
+g_tf_seconds := fvgTfSeconds
+[isBull, isBear, detectedFvg, thresholdUsed, atrValue] = f_request_fvg_detection(tfFinal, useConfirmedHtfSecurity, chartTfSeconds, fvgCalcBarsCount)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ⚡ LÓGICA PRINCIPAL - FVG GRÁFICO
 // ═══════════════════════════════════════════════════════════════════════════
-if barstate.isconfirmed
-    g_prev_fvg_time := g_last_fvg_time
+bool didAddBullFvg = false
+bool didAddBearFvg = false
 
 if i_fvg_enabled and barstate.isconfirmed and (isBull or isBear) and detectedFvg.birthTime > g_last_fvg_time
     if g_active_fvgs.size() < i_fvg_max_count and detectedFvg.isActive
         g_last_fvg_time := detectedFvg.birthTime
+        detectedFvg.birthBarIndex := bar_index
         detectedFvg.draw()
         g_active_fvgs.unshift(detectedFvg)
+        didAddBullFvg := isBull
+        didAddBearFvg := isBear
 
 // [FIX v1.2.0] Anti-repaint: mitigação/expiração APENAS em barstate.isconfirmed
 if i_fvg_enabled and barstate.isconfirmed and g_active_fvgs.size() > 0
@@ -996,7 +1248,6 @@ if not i_fvg_enabled and g_active_fvgs.size() > 0
             fvg.remove(false, na)
     g_active_fvgs.clear()
     g_last_fvg_time := 0
-    g_prev_fvg_time := 0
 
 // === BLOCO DE CACHE RSI ===
 bool use_rsi_25 = i_show_rsi_25
@@ -1052,34 +1303,39 @@ pos_rsi = switch i_table_position
 
 
 if i_table_show and barstate.islast
+    bool positionChanged = i_table_position != g_prev_table_position
     int current_col_config = (show_col1 ? 1 : 0) + (show_col2 ? 2 : 0)
-    if current_col_config != g_prev_col_config and not na(g_rsi_table)
+    if (current_col_config != g_prev_col_config or positionChanged) and not na(g_rsi_table)
         table.delete(g_rsi_table)
         g_rsi_table := na
     g_prev_col_config := current_col_config
+    g_prev_table_position := i_table_position
     if na(g_rsi_table)
         g_rsi_table := table.new(pos_rsi, total_cols, MAX_TABLE_ROWS, bgcolor=color.new(#282a36, 0), border_width=0, frame_width=2, frame_color=color.new(#6272a4, 0))
-        table.cell(g_rsi_table, 0, 0, '  TF  ', text_color=color.new(#bd93f9, 0), bgcolor=color.new(#44475a, 0), text_size=size.small)
-        table.cell(g_rsi_table, 1, 0, '    RSI     ', text_color=color.new(#bd93f9, 0), bgcolor=color.new(#44475a, 0), text_size=size.small)
-        if show_col1
-            table.cell(g_rsi_table, col_p1, 0, '        ' + str.tostring(i_table_col1_level, '#') + '        ', text_color=color.new(#bd93f9, 0), bgcolor=color.new(#44475a, 0), text_size=size.small)
-        if show_col2
-            table.cell(g_rsi_table, col_p2, 0, '        ' + str.tostring(i_table_col2_level, '#') + '        ', text_color=color.new(#bd93f9, 0), bgcolor=color.new(#44475a, 0), text_size=size.small)
-    for i = 0 to 4
+        f_table_seed_cells(g_rsi_table, total_cols, MAX_TABLE_ROWS)
+    color tableHeaderBg = color.new(#44475a, 0)
+    color tableHeaderText = color.new(#bd93f9, 0)
+    f_table_set_cell(g_rsi_table, 0, 0, '  TF  ', tableHeaderBg, tableHeaderText, size.small)
+    f_table_set_cell(g_rsi_table, 1, 0, '    RSI     ', tableHeaderBg, tableHeaderText, size.small)
+    if show_col1
+        f_table_set_cell(g_rsi_table, col_p1, 0, '        ' + str.tostring(i_table_col1_level, '#') + '        ', tableHeaderBg, tableHeaderText, size.small)
+    if show_col2
+        f_table_set_cell(g_rsi_table, col_p2, 0, '        ' + str.tostring(i_table_col2_level, '#') + '        ', tableHeaderBg, tableHeaderText, size.small)
+    for i = 0 to RSI_MTF_SLOT_COUNT - 1
         rsi_val = g_rsi_values.get(i)
         [bg, txt_clr] = f_rsi_color(rsi_val)
-        table.cell(g_rsi_table, 0, i+1, g_rsi_tfs_display.get(i), bgcolor=bg, text_color=txt_clr, text_size=size.small)
-        table.cell(g_rsi_table, 1, i+1, na(rsi_val) ? "—" : str.tostring(rsi_val, "#.##"), bgcolor=bg, text_color=txt_clr, text_size=size.normal)
+        f_table_set_cell(g_rsi_table, 0, i + 1, f_rsi_tf_display(i), bg, txt_clr, size.small)
+        f_table_set_cell(g_rsi_table, 1, i + 1, na(rsi_val) ? '—' : str.tostring(rsi_val, '#.##'), bg, txt_clr, size.normal)
         if show_col1
             p1 = f_rsi_calc_price(i_table_col1_level, g_rsi_close.get(i), g_rsi_auc.get(i), g_rsi_adc.get(i))
             bg1 = (not na(rsi_val) and rsi_val <= i_table_col1_level) ? color.new(#3de1c7, 20) : color.new(#282a36, 0)
             txt1 = (not na(rsi_val) and rsi_val <= i_table_col1_level) ? color.new(#282a36, 0) : color.new(#f8f8f2, 0)
-            table.cell(g_rsi_table, col_p1, i+1, na(p1) ? "—" : str.tostring(p1, format.mintick), bgcolor=bg1, text_color=txt1, text_size=size.normal)
+            f_table_set_cell(g_rsi_table, col_p1, i + 1, na(p1) ? '—' : str.tostring(p1, format.mintick), bg1, txt1, size.normal)
         if show_col2
             p2 = f_rsi_calc_price(i_table_col2_level, g_rsi_close.get(i), g_rsi_auc.get(i), g_rsi_adc.get(i))
             bg2 = (not na(rsi_val) and rsi_val >= i_table_col2_level) ? color.new(#ff4d8d, 20) : color.new(#282a36, 0)
             txt2 = (not na(rsi_val) and rsi_val >= i_table_col2_level) ? color.new(#282a36, 0) : color.new(#f8f8f2, 0)
-            table.cell(g_rsi_table, col_p2, i+1, na(p2) ? "—" : str.tostring(p2, format.mintick), bgcolor=bg2, text_color=txt2, text_size=size.normal)
+            f_table_set_cell(g_rsi_table, col_p2, i + 1, na(p2) ? '—' : str.tostring(p2, format.mintick), bg2, txt2, size.normal)
 
 
 
@@ -1100,39 +1356,40 @@ bool new4 = ta.change(time(htf4.settings.htf)) > 0
 bool new5 = ta.change(time(htf5.settings.htf)) > 0
 bool new6 = ta.change(time(htf6.settings.htf)) > 0
 
-if htf1.settings.show and f_valid_timeframe(htf1.settings.htf)
-    bool showTrace = (settings.trace_anchor == 'First Timeframe') or (settings.trace_anchor == 'Last Timeframe' and settings.max_sets == 1)
-    htf1.Monitor(new1).UpdateTime(offset).Update(offset, showTrace).FindImbalance()
-    cnt += 1
-    offset += htf1.candles.size() * settings.width + (htf1.candles.size() > 0 ? (htf1.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
+if f_can_render_htf(htf1.settings.show, htf1.settings.htf, cnt, last)
+    [nextCnt1, nextOffset1] = f_process_htf(htf1, new1, cnt, last, offset)
+    cnt := nextCnt1
+    offset := nextOffset1
 
-if htf2.settings.show and f_valid_timeframe(htf2.settings.htf) and cnt < last
-    bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe' and cnt == last - 1)
-    htf2.Monitor(new2).UpdateTime(offset).Update(offset, showTrace).FindImbalance()
-    cnt += 1
-    offset += htf2.candles.size() * settings.width + (htf2.candles.size() > 0 ? (htf2.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
+if f_can_render_htf(htf2.settings.show, htf2.settings.htf, cnt, last)
+    [nextCnt2, nextOffset2] = f_process_htf(htf2, new2, cnt, last, offset)
+    cnt := nextCnt2
+    offset := nextOffset2
 
-if htf3.settings.show and f_valid_timeframe(htf3.settings.htf) and cnt < last
-    bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe' and cnt == last - 1)
-    htf3.Monitor(new3).UpdateTime(offset).Update(offset, showTrace).FindImbalance()
-    cnt += 1
-    offset += htf3.candles.size() * settings.width + (htf3.candles.size() > 0 ? (htf3.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
+if f_can_render_htf(htf3.settings.show, htf3.settings.htf, cnt, last)
+    [nextCnt3, nextOffset3] = f_process_htf(htf3, new3, cnt, last, offset)
+    cnt := nextCnt3
+    offset := nextOffset3
 
-if htf4.settings.show and f_valid_timeframe(htf4.settings.htf) and cnt < last
-    bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe' and cnt == last - 1)
-    htf4.Monitor(new4).UpdateTime(offset).Update(offset, showTrace).FindImbalance()
-    cnt += 1
-    offset += htf4.candles.size() * settings.width + (htf4.candles.size() > 0 ? (htf4.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
+if f_can_render_htf(htf4.settings.show, htf4.settings.htf, cnt, last)
+    [nextCnt4, nextOffset4] = f_process_htf(htf4, new4, cnt, last, offset)
+    cnt := nextCnt4
+    offset := nextOffset4
 
-if htf5.settings.show and f_valid_timeframe(htf5.settings.htf) and cnt < last
-    bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe' and cnt == last - 1)
-    htf5.Monitor(new5).UpdateTime(offset).Update(offset, showTrace).FindImbalance()
-    cnt += 1
-    offset += htf5.candles.size() * settings.width + (htf5.candles.size() > 0 ? (htf5.candles.size() - 1) * settings.buffer : 0) + settings.htf_buffer
+if f_can_render_htf(htf5_show, htf5.settings.htf, cnt, last)
+    [nextCnt5, nextOffset5] = f_process_htf(htf5, new5, cnt, last, offset)
+    cnt := nextCnt5
+    offset := nextOffset5
 
-if htf6.settings.show and f_valid_timeframe(htf6.settings.htf) and cnt < last
-    bool showTrace = (settings.trace_anchor == 'First Timeframe' and cnt == 0) or (settings.trace_anchor == 'Last Timeframe')
-    htf6.Monitor(new6).UpdateTime(offset).Update(offset, showTrace).FindImbalance()
+if f_can_render_htf(htf6_show, htf6.settings.htf, cnt, last)
+    [nextCnt6, nextOffset6] = f_process_htf(htf6, new6, cnt, last, offset)
+    cnt := nextCnt6
+    offset := nextOffset6
+
+if not settings.trace_show or cnt == 0
+    f_clear_trace()
+else if not settings.label_show
+    f_clear_trace_labels()
 
 f_cleanup_candle_set(CandleSet candleSet) =>
     if candleSet.candles.size() > 0
@@ -1148,18 +1405,7 @@ f_cleanup_candle_set(CandleSet candleSet) =>
         for i = candleSet.imbalances.size() - 1 to 0
             box.delete(candleSet.imbalances.get(i).b)
         candleSet.imbalances.clear()
-    if not na(candleSet.tfNameTop)
-        candleSet.tfNameTop.delete()
-        candleSet.tfNameTop := na
-    if not na(candleSet.tfNameBottom)
-        candleSet.tfNameBottom.delete()
-        candleSet.tfNameBottom := na
-    if not na(candleSet.tfTimerTop)
-        candleSet.tfTimerTop.delete()
-        candleSet.tfTimerTop := na
-    if not na(candleSet.tfTimerBottom)
-        candleSet.tfTimerBottom.delete()
-        candleSet.tfTimerBottom := na
+    candleSet.ClearHtfLabels()
 // [FIX v1.2.2] Garbage collection ao desativar HTF
 if not htf1.settings.show and prev_show_htf1
     f_cleanup_candle_set(htf1)
@@ -1169,9 +1415,9 @@ if not htf3.settings.show and prev_show_htf3
     f_cleanup_candle_set(htf3)
 if not htf4.settings.show and prev_show_htf4
     f_cleanup_candle_set(htf4)
-if not htf5.settings.show and prev_show_htf5
+if not htf5_show and prev_show_htf5
     f_cleanup_candle_set(htf5)
-if not htf6.settings.show and prev_show_htf6
+if not htf6_show and prev_show_htf6
     f_cleanup_candle_set(htf6)
 
 // [FIX v1.2.0] Garbage collection: limpa tabela RSI quando feature desligada
@@ -1179,13 +1425,14 @@ if not i_table_show and not na(g_rsi_table)
     table.delete(g_rsi_table)
     g_rsi_table := na
     g_prev_col_config := 0
+    g_prev_table_position := ''
 
 prev_show_htf1 := htf1.settings.show
 prev_show_htf2 := htf2.settings.show
 prev_show_htf3 := htf3.settings.show
 prev_show_htf4 := htf4.settings.show
-prev_show_htf5 := htf5.settings.show
-prev_show_htf6 := htf6.settings.show
+prev_show_htf5 := htf5_show
+prev_show_htf6 := htf6_show
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔍 DEBUG MODE
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1194,7 +1441,7 @@ prev_show_htf6 := htf6.settings.show
 if i_fvg_debug
     if na(g_debug_table)
         g_debug_table := table.new(position.bottom_left, 2, 8, bgcolor=color.new(#282a36, 0), border_width=2, border_color=color.new(#bd93f9, 0))
-        table.cell(g_debug_table, 0, 0, '🔍 FVG Debug V1.2.3', text_color=color.new(#f8f8f2, 0), bgcolor=color.new(#6272a4, 0))
+        table.cell(g_debug_table, 0, 0, '🔍 FVG Debug V1.2.10', text_color=color.new(#f8f8f2, 0), bgcolor=color.new(#6272a4, 0))
         table.merge_cells(g_debug_table, 0, 0, 1, 0)
     if barstate.islast
         activeCount = g_active_fvgs.size()
@@ -1225,13 +1472,8 @@ else if not i_fvg_debug and not na(g_debug_table)
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔔 ALERTAS
 // ═══════════════════════════════════════════════════════════════════════════
-// g_prev_fvg_time: snapshot do g_last_fvg_time ANTES de adicionar novo FVG
-// g_last_fvg_time: atualizado APÓS adicionar novo FVG
-// Necessário para que alertcondition detecte o FVG recém-adicionado
-bool fvg_can_be_added = g_active_fvgs.size() < i_fvg_max_count
-bool fvg_is_new = detectedFvg.birthTime > nz(g_prev_fvg_time, 0)
-bool new_bull_fvg = i_fvg_enabled and barstate.isconfirmed and isBull and fvg_is_new and fvg_can_be_added and detectedFvg.isActive
-bool new_bear_fvg = i_fvg_enabled and barstate.isconfirmed and isBear and fvg_is_new and fvg_can_be_added and detectedFvg.isActive
+bool new_bull_fvg = didAddBullFvg
+bool new_bear_fvg = didAddBearFvg
 
 alertcondition(new_bull_fvg, title="Novo FVG de Alta", message="🟢 Novo FVG de Alta Detectado!")
 alertcondition(new_bear_fvg, title="Novo FVG de Baixa", message="🔴 Novo FVG de Baixa Detectado!")
