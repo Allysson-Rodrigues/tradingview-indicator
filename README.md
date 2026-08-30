@@ -4,7 +4,7 @@ TradingView-focused repository for Pine Script indicators built around structure
 
 ## Featured indicator
 
-### ICT FVG + RSI (v1.2.10)
+### ICT FVG + RSI (v1.2.12)
 
 Main capabilities:
 
@@ -33,7 +33,7 @@ Key controls exposed to the user:
 
 ```text
 .
-├── src/ict_fvg_rsi_v1.2.10.pine  Main Pine Script source
+├── src/ict_fvg_rsi_v1.2.12.pine  Main Pine Script source
 ├── CHANGELOG.md                 Versioned release history
 ├── LICENSE
 └── README.md

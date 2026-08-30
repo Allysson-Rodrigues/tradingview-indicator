@@ -1,8 +1,9 @@
-# Plano de Melhorias Futuras - ICT + FVG + RSI V1.2.10
+# Plano de Melhorias Futuras - ICT + FVG + RSI V1.2.12
 
-Data: 2026-03-10
-Escopo: registrar uma avaliacao tecnica objetiva do projeto e um plano de implementacao para execucao futura.
-Status: documento de planejamento, sem alteracao funcional no indicador.
+Data Atualização: 2026-08-30
+Status: **PLANO EXECUTADO (SPRINTS 1, 2 e 3 CONCLUÍDAS na v1.2.12)**
+
+
 
 ## Resumo Executivo
 
@@ -231,18 +232,18 @@ Resultado esperado:
 
 ## Backlog Sugerido por Sprint
 
-### Sprint 1
+### Sprint 1 (✅ Concluída em 1.2.12)
 
 - Criar baseline manual de validacao.
 - Atualizar documento de analise tecnica para a versao atual.
 - Mapear pontos de duplicacao estrutural que precisam ser atacados primeiro.
 
-### Sprint 2
+### Sprint 2 (✅ Concluída em 1.2.12)
 
 - Refatorar o nucleo HTF.
 - Consolidar contratos de leitura HTF.
 
-### Sprint 3
+### Sprint 3 (✅ Concluída em 1.2.11/1.2.12)
 
 - Refatorar pipeline RSI MTF.
 - Revisar ciclo de vida da tabela RSI e sincronizacao visual.
