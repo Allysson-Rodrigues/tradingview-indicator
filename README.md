@@ -1,4 +1,7 @@
 # TradingView Analytical Tools
+![Pine Script](https://img.shields.io/badge/Pine_Script-v6-131722?style=for-the-badge&logo=tradingview)
+![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-1.2.12-success.svg?style=for-the-badge)
 
 TradingView-focused repository for Pine Script indicators built around structured technical analysis, price imbalance mapping, and multi-timeframe context.
 
@@ -33,8 +36,11 @@ Key controls exposed to the user:
 
 ```text
 .
-├── src/ict_fvg_rsi_v1.2.12.pine  Main Pine Script source
-├── CHANGELOG.md                 Versioned release history
+├── src/ict_fvg_rsi_v1.2.12.pine        # Main Pine Script source
+├── CHANGELOG.md                       # Versioned release history
+├── ANALISE_TECNICA_INDICADOR_V1.2.12.md # Extensive technical analysis & execution state
+├── PLANO_MELHORIAS_V1.2.12.md         # Indicator roadmap (Sprints 1-3 Completed)
+├── CONTRIBUTING.md                    # Developer guide
 ├── LICENSE
 └── README.md
 ```
