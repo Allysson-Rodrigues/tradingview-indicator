@@ -1,5 +1,13 @@
 # Changelog
 
+## V1.2.12 (2026-08-30)
+
+- Refactor: Consolidação do núcleo HTF substituindo a repetição em massa das variáveis e arrays (HTF1 a HTF6) por um array centralizado iterável de `CandleSet`, melhorando a estabilidade da atualização visual e reduzindo drasticamente o número de linhas (P1).
+
+## V1.2.11 (2026-08-30)
+
+- Refactor: Consolidação do pipeline RSI MTF em estrutura orientada a dados (`RSISlot`), substituindo 4 arrays paralelos e reduzindo risco de dessincronização na tabela visual, atacando um dos débitos técnicos listados no plano P1.
+
 ## V1.2.10 (2026-03-10)
 
 - Refactor: sincronização de trace lines e price labels extraída para helpers dedicados.

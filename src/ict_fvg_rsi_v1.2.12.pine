@@ -1,16 +1,23 @@
 //@version=6
-indicator('ICT + FVG + RSI V1.2.10', shorttitle="ICT + FVG Pro 1.2.10", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500, max_bars_back=5000)
+indicator('ICT + FVG + RSI V1.2.12', shorttitle="ICT + FVG Pro 1.2.12", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500, max_bars_back=5000)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📌 METADADOS
 // ═══════════════════════════════════════════════════════════════════════════
 // Nome:        ICT + FVG + RSI
-// Versão:      1.2.10
-// Atualizado:  2026-03-10
+// Versão:      1.2.12
+// Atualizado:  2026-08-30
 //
 // ═══════════════════════════════════════════════════════════════════════════
 // 📜 CHANGELOG
 // ═══════════════════════════════════════════════════════════════════════════
+// V1.2.12 (2026-08-30)
+//    - Refactor: consolidação do núcleo HTF usando CandleSet em arrays iteráveis (P1).
+//    - Manutenção: remoção de duplicação massiva na renderização, cleanup e requests de HTFs.
+//
+// V1.2.11 (2026-08-30)
+//    - Refactor: consolidação do pipeline RSI MTF em estrutura orientada a dados (RSISlot), reduzindo repeticao (P1).
+//
 // V1.2.10 (2026-03-10)
 //    - Refactor: sincronização de trace lines e price labels extraída para helpers dedicados
 //    - Limpeza: funções auxiliares mortas removidas do bloco RSI/HTF
@@ -414,68 +421,33 @@ i_atr_period = input.int(14, 'ATR Período', minval=5, maxval=50, group=group_fv
 // ═══════════════════════════════════════════════════════════════════════════
 // 🌐 VARIÁVEIS GLOBAIS
 // ═══════════════════════════════════════════════════════════════════════════
-var array<Candle> candles_1 = array.new<Candle>(0)
-var array<Candle> candles_2 = array.new<Candle>(0)
-var array<Candle> candles_3 = array.new<Candle>(0)
-var array<Candle> candles_4 = array.new<Candle>(0)
-var array<Candle> candles_5 = array.new<Candle>(0)
-var array<Candle> candles_6 = array.new<Candle>(0)
+var CandleSet htf1 = CandleSet.new(array.new<Candle>(), array.new<Imbalance>(), SettingsHTF1, na, na, na, na)
+var CandleSet htf2 = CandleSet.new(array.new<Candle>(), array.new<Imbalance>(), SettingsHTF2, na, na, na, na)
+var CandleSet htf3 = CandleSet.new(array.new<Candle>(), array.new<Imbalance>(), SettingsHTF3, na, na, na, na)
+var CandleSet htf4 = CandleSet.new(array.new<Candle>(), array.new<Imbalance>(), SettingsHTF4, na, na, na, na)
+var CandleSet htf5 = CandleSet.new(array.new<Candle>(), array.new<Imbalance>(), SettingsHTF5, na, na, na, na)
+var CandleSet htf6 = CandleSet.new(array.new<Candle>(), array.new<Imbalance>(), SettingsHTF6, na, na, na, na)
 
-var array<Imbalance> imbalances_1 = array.new<Imbalance>()
-var array<Imbalance> imbalances_2 = array.new<Imbalance>()
-var array<Imbalance> imbalances_3 = array.new<Imbalance>()
-var array<Imbalance> imbalances_4 = array.new<Imbalance>()
-var array<Imbalance> imbalances_5 = array.new<Imbalance>()
-var array<Imbalance> imbalances_6 = array.new<Imbalance>()
-
-var bool prev_show_htf1 = true
-var bool prev_show_htf2 = true
-var bool prev_show_htf3 = true
-var bool prev_show_htf4 = true
-var bool prev_show_htf5 = true
-var bool prev_show_htf6 = true
-
-var CandleSet htf1 = CandleSet.new()
-htf1.settings := SettingsHTF1
-htf1.candles := candles_1
-htf1.imbalances := imbalances_1
-
-var CandleSet htf2 = CandleSet.new()
-htf2.settings := SettingsHTF2
-htf2.candles := candles_2
-htf2.imbalances := imbalances_2
-
-var CandleSet htf3 = CandleSet.new()
-htf3.settings := SettingsHTF3
-htf3.candles := candles_3
-htf3.imbalances := imbalances_3
-
-var CandleSet htf4 = CandleSet.new()
-htf4.settings := SettingsHTF4
-htf4.candles := candles_4
-htf4.imbalances := imbalances_4
-
-var CandleSet htf5 = CandleSet.new()
-htf5.settings := SettingsHTF5
-htf5.candles := candles_5
-htf5.imbalances := imbalances_5
-
-var CandleSet htf6 = CandleSet.new()
-htf6.settings := SettingsHTF6
-htf6.candles := candles_6
-htf6.imbalances := imbalances_6
+var array<CandleSet> g_htfs = array.from(htf1, htf2, htf3, htf4, htf5, htf6)
+var array<bool> g_prev_shows = array.from(true, true, true, true, true, true)
 
 // [FIX v1.2.1] Helper removido — métodos convertidos em funções puras
 var Trace trace = Trace.new()
 // [FIX v1.2.0] var adicionado
 var color color_transparent = #ffffff00
 
+type RSISlot
+    float rsi
+    float close
+    float auc
+    float adc
+
 // RSI
 float RSI_ALPHA = 1.0 / i_rsi_length
-var float[] g_rsi_values = array.new_float(RSI_MTF_SLOT_COUNT, na)
-var float[] g_rsi_close = array.new_float(RSI_MTF_SLOT_COUNT, na)
-var float[] g_rsi_auc = array.new_float(RSI_MTF_SLOT_COUNT, na)
-var float[] g_rsi_adc = array.new_float(RSI_MTF_SLOT_COUNT, na)
+var array<RSISlot> g_rsi_slots = array.new<RSISlot>(RSI_MTF_SLOT_COUNT)
+if barstate.isfirst
+    for i = 0 to RSI_MTF_SLOT_COUNT - 1
+        g_rsi_slots.set(i, RSISlot.new(na, na, na, na))
 var float g_cached_rsi25 = na
 var float g_cached_rsi30 = na
 var float g_cached_rsi50 = na
@@ -561,13 +533,11 @@ f_htf_name(string HTF) =>
         HTF
 
 f_htf_enabled() =>
+    array<bool> current_shows = array.from(SettingsHTF1.show, SettingsHTF2.show, SettingsHTF3.show, SettingsHTF4.show, htf5_show, htf6_show)
     int enabled = 0
-    enabled += htf1.settings.show ? 1 : 0
-    enabled += htf2.settings.show ? 1 : 0
-    enabled += htf3.settings.show ? 1 : 0
-    enabled += htf4.settings.show ? 1 : 0
-    enabled += htf5_show ? 1 : 0
-    enabled += htf6_show ? 1 : 0
+    for i = 0 to 5
+        if current_shows.get(i)
+            enabled += 1
     math.min(enabled, settings.max_sets)
 
 f_can_render_htf(bool isEnabled, string HTF, int renderedCount, int renderedTotal) =>
@@ -649,39 +619,27 @@ f_candle_set_low(array<Candle> candles, float l) =>
     _l
 
 f_candles_high() =>
+    array<bool> current_shows = array.from(SettingsHTF1.show, SettingsHTF2.show, SettingsHTF3.show, SettingsHTF4.show, htf5_show, htf6_show)
     h = 0.0
     int cnt = 0
     int last = f_htf_enabled()
-    if f_can_render_htf(htf1.settings.show, htf1.settings.htf, cnt, last)
-        h := f_candle_set_high(htf1.candles, h), cnt += 1
-    if f_can_render_htf(htf2.settings.show, htf2.settings.htf, cnt, last)
-        h := f_candle_set_high(htf2.candles, h), cnt += 1
-    if f_can_render_htf(htf3.settings.show, htf3.settings.htf, cnt, last)
-        h := f_candle_set_high(htf3.candles, h), cnt += 1
-    if f_can_render_htf(htf4.settings.show, htf4.settings.htf, cnt, last)
-        h := f_candle_set_high(htf4.candles, h), cnt += 1
-    if f_can_render_htf(htf5_show, htf5.settings.htf, cnt, last)
-        h := f_candle_set_high(htf5.candles, h), cnt += 1
-    if f_can_render_htf(htf6_show, htf6.settings.htf, cnt, last)
-        h := f_candle_set_high(htf6.candles, h)
+    for i = 0 to 5
+        CandleSet cs = g_htfs.get(i)
+        if f_can_render_htf(current_shows.get(i), cs.settings.htf, cnt, last)
+            h := f_candle_set_high(cs.candles, h)
+            cnt += 1
     h
 
 f_candles_low(float h) =>
+    array<bool> current_shows = array.from(SettingsHTF1.show, SettingsHTF2.show, SettingsHTF3.show, SettingsHTF4.show, htf5_show, htf6_show)
     l = h
     int cnt = 0
     int last = f_htf_enabled()
-    if f_can_render_htf(htf1.settings.show, htf1.settings.htf, cnt, last)
-        l := f_candle_set_low(htf1.candles, l), cnt += 1
-    if f_can_render_htf(htf2.settings.show, htf2.settings.htf, cnt, last)
-        l := f_candle_set_low(htf2.candles, l), cnt += 1
-    if f_can_render_htf(htf3.settings.show, htf3.settings.htf, cnt, last)
-        l := f_candle_set_low(htf3.candles, l), cnt += 1
-    if f_can_render_htf(htf4.settings.show, htf4.settings.htf, cnt, last)
-        l := f_candle_set_low(htf4.candles, l), cnt += 1
-    if f_can_render_htf(htf5_show, htf5.settings.htf, cnt, last)
-        l := f_candle_set_low(htf5.candles, l), cnt += 1
-    if f_can_render_htf(htf6_show, htf6.settings.htf, cnt, last)
-        l := f_candle_set_low(htf6.candles, l)
+    for i = 0 to 5
+        CandleSet cs = g_htfs.get(i)
+        if f_can_render_htf(current_shows.get(i), cs.settings.htf, cnt, last)
+            l := f_candle_set_low(cs.candles, l)
+            cnt += 1
     l
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1174,34 +1132,19 @@ if i_fvg_enabled and fvgTfIsLower and barstate.isfirst
 
 // Pine exige chamadas consistentes nesse bloco. Aqui deixamos as 5 leituras explícitas.
 [closeVal1, rsiVal1, aucVal1, adcVal1] = f_request_rsi_pack(i_rsi_tf1, useConfirmedHtfSecurity, chartTfSeconds, rsiCalcBarsCount)
-g_rsi_close.set(0, closeVal1)
-g_rsi_values.set(0, rsiVal1)
-g_rsi_auc.set(0, aucVal1)
-g_rsi_adc.set(0, adcVal1)
+g_rsi_slots.get(0).close := closeVal1, g_rsi_slots.get(0).rsi := rsiVal1, g_rsi_slots.get(0).auc := aucVal1, g_rsi_slots.get(0).adc := adcVal1
 
 [closeVal2, rsiVal2, aucVal2, adcVal2] = f_request_rsi_pack(i_rsi_tf2, useConfirmedHtfSecurity, chartTfSeconds, rsiCalcBarsCount)
-g_rsi_close.set(1, closeVal2)
-g_rsi_values.set(1, rsiVal2)
-g_rsi_auc.set(1, aucVal2)
-g_rsi_adc.set(1, adcVal2)
+g_rsi_slots.get(1).close := closeVal2, g_rsi_slots.get(1).rsi := rsiVal2, g_rsi_slots.get(1).auc := aucVal2, g_rsi_slots.get(1).adc := adcVal2
 
 [closeVal3, rsiVal3, aucVal3, adcVal3] = f_request_rsi_pack(i_rsi_tf3, useConfirmedHtfSecurity, chartTfSeconds, rsiCalcBarsCount)
-g_rsi_close.set(2, closeVal3)
-g_rsi_values.set(2, rsiVal3)
-g_rsi_auc.set(2, aucVal3)
-g_rsi_adc.set(2, adcVal3)
+g_rsi_slots.get(2).close := closeVal3, g_rsi_slots.get(2).rsi := rsiVal3, g_rsi_slots.get(2).auc := aucVal3, g_rsi_slots.get(2).adc := adcVal3
 
 [closeVal4, rsiVal4, aucVal4, adcVal4] = f_request_rsi_pack(i_rsi_tf4, useConfirmedHtfSecurity, chartTfSeconds, rsiCalcBarsCount)
-g_rsi_close.set(3, closeVal4)
-g_rsi_values.set(3, rsiVal4)
-g_rsi_auc.set(3, aucVal4)
-g_rsi_adc.set(3, adcVal4)
+g_rsi_slots.get(3).close := closeVal4, g_rsi_slots.get(3).rsi := rsiVal4, g_rsi_slots.get(3).auc := aucVal4, g_rsi_slots.get(3).adc := adcVal4
 
 [closeVal5, rsiVal5, aucVal5, adcVal5] = f_request_rsi_pack(i_rsi_tf5, useConfirmedHtfSecurity, chartTfSeconds, rsiCalcBarsCount)
-g_rsi_close.set(4, closeVal5)
-g_rsi_values.set(4, rsiVal5)
-g_rsi_auc.set(4, aucVal5)
-g_rsi_adc.set(4, adcVal5)
+g_rsi_slots.get(4).close := closeVal5, g_rsi_slots.get(4).rsi := rsiVal5, g_rsi_slots.get(4).auc := aucVal5, g_rsi_slots.get(4).adc := adcVal5
 
 tfFinal = hasCustomFvgTf ? i_fvg_timeframe : timeframe.period
 g_tf_seconds := fvgTfSeconds
@@ -1322,17 +1265,18 @@ if i_table_show and barstate.islast
     if show_col2
         f_table_set_cell(g_rsi_table, col_p2, 0, '        ' + str.tostring(i_table_col2_level, '#') + '        ', tableHeaderBg, tableHeaderText, size.small)
     for i = 0 to RSI_MTF_SLOT_COUNT - 1
-        rsi_val = g_rsi_values.get(i)
+        RSISlot slot = g_rsi_slots.get(i)
+        rsi_val = slot.rsi
         [bg, txt_clr] = f_rsi_color(rsi_val)
         f_table_set_cell(g_rsi_table, 0, i + 1, f_rsi_tf_display(i), bg, txt_clr, size.small)
         f_table_set_cell(g_rsi_table, 1, i + 1, na(rsi_val) ? '—' : str.tostring(rsi_val, '#.##'), bg, txt_clr, size.normal)
         if show_col1
-            p1 = f_rsi_calc_price(i_table_col1_level, g_rsi_close.get(i), g_rsi_auc.get(i), g_rsi_adc.get(i))
+            p1 = f_rsi_calc_price(i_table_col1_level, slot.close, slot.auc, slot.adc)
             bg1 = (not na(rsi_val) and rsi_val <= i_table_col1_level) ? color.new(#3de1c7, 20) : color.new(#282a36, 0)
             txt1 = (not na(rsi_val) and rsi_val <= i_table_col1_level) ? color.new(#282a36, 0) : color.new(#f8f8f2, 0)
             f_table_set_cell(g_rsi_table, col_p1, i + 1, na(p1) ? '—' : str.tostring(p1, format.mintick), bg1, txt1, size.normal)
         if show_col2
-            p2 = f_rsi_calc_price(i_table_col2_level, g_rsi_close.get(i), g_rsi_auc.get(i), g_rsi_adc.get(i))
+            p2 = f_rsi_calc_price(i_table_col2_level, slot.close, slot.auc, slot.adc)
             bg2 = (not na(rsi_val) and rsi_val >= i_table_col2_level) ? color.new(#ff4d8d, 20) : color.new(#282a36, 0)
             txt2 = (not na(rsi_val) and rsi_val >= i_table_col2_level) ? color.new(#282a36, 0) : color.new(#f8f8f2, 0)
             f_table_set_cell(g_rsi_table, col_p2, i + 1, na(p2) ? '—' : str.tostring(p2, format.mintick), bg2, txt2, size.normal)
@@ -1356,35 +1300,15 @@ bool new4 = ta.change(time(htf4.settings.htf)) > 0
 bool new5 = ta.change(time(htf5.settings.htf)) > 0
 bool new6 = ta.change(time(htf6.settings.htf)) > 0
 
-if f_can_render_htf(htf1.settings.show, htf1.settings.htf, cnt, last)
-    [nextCnt1, nextOffset1] = f_process_htf(htf1, new1, cnt, last, offset)
-    cnt := nextCnt1
-    offset := nextOffset1
+array<bool> is_new_arr = array.from(new1, new2, new3, new4, new5, new6)
+array<bool> current_shows = array.from(SettingsHTF1.show, SettingsHTF2.show, SettingsHTF3.show, SettingsHTF4.show, htf5_show, htf6_show)
 
-if f_can_render_htf(htf2.settings.show, htf2.settings.htf, cnt, last)
-    [nextCnt2, nextOffset2] = f_process_htf(htf2, new2, cnt, last, offset)
-    cnt := nextCnt2
-    offset := nextOffset2
-
-if f_can_render_htf(htf3.settings.show, htf3.settings.htf, cnt, last)
-    [nextCnt3, nextOffset3] = f_process_htf(htf3, new3, cnt, last, offset)
-    cnt := nextCnt3
-    offset := nextOffset3
-
-if f_can_render_htf(htf4.settings.show, htf4.settings.htf, cnt, last)
-    [nextCnt4, nextOffset4] = f_process_htf(htf4, new4, cnt, last, offset)
-    cnt := nextCnt4
-    offset := nextOffset4
-
-if f_can_render_htf(htf5_show, htf5.settings.htf, cnt, last)
-    [nextCnt5, nextOffset5] = f_process_htf(htf5, new5, cnt, last, offset)
-    cnt := nextCnt5
-    offset := nextOffset5
-
-if f_can_render_htf(htf6_show, htf6.settings.htf, cnt, last)
-    [nextCnt6, nextOffset6] = f_process_htf(htf6, new6, cnt, last, offset)
-    cnt := nextCnt6
-    offset := nextOffset6
+for i = 0 to 5
+    CandleSet cs = g_htfs.get(i)
+    if f_can_render_htf(current_shows.get(i), cs.settings.htf, cnt, last)
+        [nextCnt, nextOffset] = f_process_htf(cs, is_new_arr.get(i), cnt, last, offset)
+        cnt := nextCnt
+        offset := nextOffset
 
 if not settings.trace_show or cnt == 0
     f_clear_trace()
@@ -1407,18 +1331,12 @@ f_cleanup_candle_set(CandleSet candleSet) =>
         candleSet.imbalances.clear()
     candleSet.ClearHtfLabels()
 // [FIX v1.2.2] Garbage collection ao desativar HTF
-if not htf1.settings.show and prev_show_htf1
-    f_cleanup_candle_set(htf1)
-if not htf2.settings.show and prev_show_htf2
-    f_cleanup_candle_set(htf2)
-if not htf3.settings.show and prev_show_htf3
-    f_cleanup_candle_set(htf3)
-if not htf4.settings.show and prev_show_htf4
-    f_cleanup_candle_set(htf4)
-if not htf5_show and prev_show_htf5
-    f_cleanup_candle_set(htf5)
-if not htf6_show and prev_show_htf6
-    f_cleanup_candle_set(htf6)
+for i = 0 to 5
+    CandleSet cs = g_htfs.get(i)
+    bool is_showing = current_shows.get(i)
+    if not is_showing and g_prev_shows.get(i)
+        f_cleanup_candle_set(cs)
+    g_prev_shows.set(i, is_showing)
 
 // [FIX v1.2.0] Garbage collection: limpa tabela RSI quando feature desligada
 if not i_table_show and not na(g_rsi_table)
@@ -1426,13 +1344,6 @@ if not i_table_show and not na(g_rsi_table)
     g_rsi_table := na
     g_prev_col_config := 0
     g_prev_table_position := ''
-
-prev_show_htf1 := htf1.settings.show
-prev_show_htf2 := htf2.settings.show
-prev_show_htf3 := htf3.settings.show
-prev_show_htf4 := htf4.settings.show
-prev_show_htf5 := htf5_show
-prev_show_htf6 := htf6_show
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔍 DEBUG MODE
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1441,7 +1352,7 @@ prev_show_htf6 := htf6_show
 if i_fvg_debug
     if na(g_debug_table)
         g_debug_table := table.new(position.bottom_left, 2, 8, bgcolor=color.new(#282a36, 0), border_width=2, border_color=color.new(#bd93f9, 0))
-        table.cell(g_debug_table, 0, 0, '🔍 FVG Debug V1.2.10', text_color=color.new(#f8f8f2, 0), bgcolor=color.new(#6272a4, 0))
+        table.cell(g_debug_table, 0, 0, '🔍 FVG Debug V1.2.12', text_color=color.new(#f8f8f2, 0), bgcolor=color.new(#6272a4, 0))
         table.merge_cells(g_debug_table, 0, 0, 1, 0)
     if barstate.islast
         activeCount = g_active_fvgs.size()
