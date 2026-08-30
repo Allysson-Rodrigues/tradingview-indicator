@@ -1132,19 +1132,39 @@ if i_fvg_enabled and fvgTfIsLower and barstate.isfirst
 
 // Pine exige chamadas consistentes nesse bloco. Aqui deixamos as 5 leituras explícitas.
 [closeVal1, rsiVal1, aucVal1, adcVal1] = f_request_rsi_pack(i_rsi_tf1, useConfirmedHtfSecurity, chartTfSeconds, rsiCalcBarsCount)
-g_rsi_slots.get(0).close := closeVal1, g_rsi_slots.get(0).rsi := rsiVal1, g_rsi_slots.get(0).auc := aucVal1, g_rsi_slots.get(0).adc := adcVal1
+RSISlot s0 = g_rsi_slots.get(0)
+s0.close := closeVal1
+s0.rsi := rsiVal1
+s0.auc := aucVal1
+s0.adc := adcVal1
 
 [closeVal2, rsiVal2, aucVal2, adcVal2] = f_request_rsi_pack(i_rsi_tf2, useConfirmedHtfSecurity, chartTfSeconds, rsiCalcBarsCount)
-g_rsi_slots.get(1).close := closeVal2, g_rsi_slots.get(1).rsi := rsiVal2, g_rsi_slots.get(1).auc := aucVal2, g_rsi_slots.get(1).adc := adcVal2
+RSISlot s1 = g_rsi_slots.get(1)
+s1.close := closeVal2
+s1.rsi := rsiVal2
+s1.auc := aucVal2
+s1.adc := adcVal2
 
 [closeVal3, rsiVal3, aucVal3, adcVal3] = f_request_rsi_pack(i_rsi_tf3, useConfirmedHtfSecurity, chartTfSeconds, rsiCalcBarsCount)
-g_rsi_slots.get(2).close := closeVal3, g_rsi_slots.get(2).rsi := rsiVal3, g_rsi_slots.get(2).auc := aucVal3, g_rsi_slots.get(2).adc := adcVal3
+RSISlot s2 = g_rsi_slots.get(2)
+s2.close := closeVal3
+s2.rsi := rsiVal3
+s2.auc := aucVal3
+s2.adc := adcVal3
 
 [closeVal4, rsiVal4, aucVal4, adcVal4] = f_request_rsi_pack(i_rsi_tf4, useConfirmedHtfSecurity, chartTfSeconds, rsiCalcBarsCount)
-g_rsi_slots.get(3).close := closeVal4, g_rsi_slots.get(3).rsi := rsiVal4, g_rsi_slots.get(3).auc := aucVal4, g_rsi_slots.get(3).adc := adcVal4
+RSISlot s3 = g_rsi_slots.get(3)
+s3.close := closeVal4
+s3.rsi := rsiVal4
+s3.auc := aucVal4
+s3.adc := adcVal4
 
 [closeVal5, rsiVal5, aucVal5, adcVal5] = f_request_rsi_pack(i_rsi_tf5, useConfirmedHtfSecurity, chartTfSeconds, rsiCalcBarsCount)
-g_rsi_slots.get(4).close := closeVal5, g_rsi_slots.get(4).rsi := rsiVal5, g_rsi_slots.get(4).auc := aucVal5, g_rsi_slots.get(4).adc := adcVal5
+RSISlot s4 = g_rsi_slots.get(4)
+s4.close := closeVal5
+s4.rsi := rsiVal5
+s4.auc := aucVal5
+s4.adc := adcVal5
 
 tfFinal = hasCustomFvgTf ? i_fvg_timeframe : timeframe.period
 g_tf_seconds := fvgTfSeconds
